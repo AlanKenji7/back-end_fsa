@@ -19,7 +19,7 @@
             <div>Olá, Paciente</div>
             <span>P</span>
             <div class="dropdown" id="dropdownMenu">
-                <a href="#" onclick="mostrarPagina('pagina-consultas')"><span>📅</span>Minhas Consultas</a>
+                <a href="{{ url_for('meus_agendamentos') }}"><span>📅</span>Minhas Consultas</a>
                 <a href="#" onclick="mostrarPagina('pagina-meus-dados')"><span>👤</span>Minha Conta</a>
                 <a href="#" onclick="mostrarPagina('pagina-ajuda')"><span>❓</span>Ajuda</a>
                 <a href="#"><span>↩️</span>Sair da Conta</a>
@@ -38,34 +38,13 @@
             <p>A triagem psicológica é um processo fundamental para entender suas necessidades e direcionar você ao atendimento mais adequado.</p>
             <p>Ao solicitar a triagem, você será avaliado(a) por um de nossos profissionais que irá identificar a melhor abordagem para o seu caso, seja ela um atendimento individual, em grupo ou encaminhamento para outros serviços.</p>
             <p>Este processo é o primeiro passo para garantir que você receba o suporte psicológico que realmente precisa.</p>
-            <button class="action-button primary" onclick="mostrarPagina('pagina-horarios-triagem')">Solicitar Triagem</button>
+            <form action="{{ url_for('solicitar_triagem') }}" method="post">
+                <button class="action-button primary" type="submit">Solicitar Triagem</button>
+            </form>
         </div>
     </div>
 
-    <div id="pagina-consultas" class="page">
-      <div class="page-header">
-        <button class="action-button back-button" onclick="mostrarPagina('pagina-principal')">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white">
-                <path d="M21 11H6.83l3.58-3.59L9 6l-6 6 6 6 1.41-1.41L6.83 13H21z"/>
-            </svg>
-            VOLTAR
-        </button>
-         <div class="main-title">Minhas Consultas</div>
-         <div class="header-spacer"></div>
-      </div>
-        <div class="card-container" id="container-meus-agendamentos">
-            </div>
-        <div id="no-appointments-message" class="info-message">
-            <div class="icon-placeholder">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-                </svg>
-            </div>
-            <p>Você não possui agendamentos disponíveis.</p>
-            <p>Para agendar um atendimento, inicie o processo de triagem.</p>
-            <button class="action-button primary" onclick="mostrarPagina('pagina-principal')">Solicitar Triagem</button>
-        </div>
-    </div>
+    <!-- O conteúdo das páginas será carregado dinamicamente pelo Flask -->
 
     <div id="pagina-meus-dados" class="page">
         <div class="page-header">
