@@ -1044,9 +1044,9 @@ def deletar_estagiario(id):
 @app.route('/teste-email', methods=['GET'])
 def teste_email():
     try:
-        # Dados de teste
+        # Teste com email real
         email_enviado = enviar_email_confirmacao_consulta(
-            paciente_email='seu.email@gmail.com',  # Substitua pelo seu email real
+            paciente_email='fundacaofsaacex@gmail.com',  # Email real para teste
             nome_paciente='Paciente Teste',
             data_consulta='01/01/2024',
             hora_consulta='14:00',
@@ -1054,10 +1054,18 @@ def teste_email():
         )
         
         if email_enviado:
-            return jsonify({'message': 'Email de teste enviado com sucesso!'}), 200
+            return jsonify({
+                'message': '✅ Email enviado com sucesso!',
+                'details': 'Verifique a caixa de entrada do fundacaofsaacex@gmail.com'
+            }), 200
         else:
-            return jsonify({'error': 'Falha ao enviar email de teste'}), 500
+            return jsonify({
+                'error': '❌ Falha ao enviar email',
+                'details': 'Verifique os logs do servidor'
+            }), 500
             
     except Exception as e:
-        app.logger.error(f"Erro no teste de email: {str(e)}")
-        return jsonify({'error': f'Erro no teste de email: {str(e)}'}), 500
+        app.logger.error(f"Erro no teste: {str(e)}")
+        return jsonify({
+            'error': f'❌ Erro: {str(e)}'
+        }), 500

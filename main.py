@@ -18,18 +18,17 @@ app = Flask(__name__)
 # Configurar logging do Flask
 app.logger.setLevel(logging.DEBUG)
 
-# Configurações do Flask-Mail
+# Configurações do Flask-Mail (simples)
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', 'seu_email@gmail.com')
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', 'sua_senha_de_app')
-app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME', 'seu_email@gmail.com')
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', 'fundacaofsaacex@gmail.com')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', 'zdmd efek cxjc lgtj')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME', 'fundacaofsaacex@gmail.com')
 
-# Log das configurações de email (sem mostrar a senha)
-app.logger.info(f"Configuração de email: Servidor={app.config['MAIL_SERVER']}, Porta={app.config['MAIL_PORT']}")
-app.logger.info(f"Email remetente configurado: {app.config['MAIL_USERNAME']}")
-app.logger.info(f"Arquivo .env carregado: {os.path.exists('.env')}")
+# Log simples
+app.logger.info("Sistema de email configurado")
+app.logger.info(f"Email configurado: {app.config['MAIL_USERNAME']}")
 
 # Inicializar o Flask-Mail
 mail = Mail(app)
