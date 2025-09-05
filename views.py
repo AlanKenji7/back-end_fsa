@@ -235,8 +235,54 @@ def triagem():
 @app.route('/minhas_consultas')
 def consultas():
     print("DEBUG: Acessando a rota /minhas_consultas.")
+    
+    # Verifica se o usuário está logado
+    if 'logged_in' not in session:
+        flash('Acesso negado. Por favor, faça o login.', 'error')
+        return redirect(url_for('login'))
+    
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    if not user_id:
+        flash('Erro na sessão. Por favor, faça o login novamente.', 'error')
+        return redirect(url_for('login'))
+    
+    try:
+        if user_type == 'paciente':
+            # Busca agendamentos do paciente
+            agendamentos = Agendamento.query.filter_by(paciente_id=user_id).order_by(Agendamento.data_solicitacao.desc()).all()
+            
+            # Busca informações dos estagiários para cada agendamento
+            for agendamento in agendamentos:
+                if agendamento.estagiario_id:
+                    estagiario = Estagiario.query.get(agendamento.estagiario_id)
+                    agendamento.estagiario = estagiario
+                else:
+                    agendamento.estagiario = None
+                    
+        elif user_type == 'estagiario':
+            # Busca agendamentos do estagiário
+            agendamentos = Agendamento.query.filter_by(estagiario_id=user_id).order_by(Agendamento.data_agendamento.desc()).all()
+            
+            # Busca informações dos pacientes para cada agendamento
+            for agendamento in agendamentos:
+                if agendamento.paciente_id:
+                    paciente = Paciente.query.get(agendamento.paciente_id)
+                    agendamento.paciente = paciente
+                else:
+                    agendamento.paciente = None
+        else:
+            flash('Tipo de usuário não reconhecido.', 'error')
+            return redirect(url_for('login'))
+            
+    except Exception as e:
+        print(f"Erro ao buscar agendamentos: {e}")
+        agendamentos = []
+        flash('Erro ao carregar consultas. Tente novamente.', 'error')
+    
     messages = session.pop('_flashes', [])
-    return render_template("minhas_consultas.html", messages=messages)
+    return render_template("minhas_consultas.html", agendamentos=agendamentos, messages=messages, user_type=user_type)
 
 
 # Rota para a página de agendamentos de triagem

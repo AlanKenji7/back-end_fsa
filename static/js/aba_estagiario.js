@@ -57,29 +57,32 @@ async function fetchAPI(endpoint, method = 'GET', data = null) {
 }
 
 async function carregarConsultas() {
-    // Simulação - em produção, usaria o ID do estagiário logado
-    const estagiarioId = 1;
-    const consultas = await fetchAPI(`/consultas/estagiario/${estagiarioId}`);
-    
-    if (consultas) {
-        // Atualizar interface com as consultas
-        atualizarCalendarioConsultas(consultas);
+    try {
+        const response = await fetch('/api/estagiario/consultas');
+        const consultas = await response.json();
+        
+        if (response.ok && consultas) {
+            // Atualizar interface com as consultas
+            atualizarListaConsultas(consultas);
+        } else {
+            console.error('Erro ao carregar consultas:', consultas.error || 'Erro desconhecido');
+        }
+    } catch (error) {
+        console.error('Erro ao carregar consultas:', error);
+        mostrarToast('Erro ao carregar consultas', 'error');
     }
 }
 
-async function confirmarTriagemAPI(solicitacaoId) {
+async function confirmarTriagemAPI(solicitacaoId, dataAgendamento, observacoes) {
     try {
-        const dataAtual = new Date();
-        const dataFormatada = dataAtual.toISOString().slice(0, 16); // Formato: YYYY-MM-DDTHH:mm
-
         const response = await fetch(`/api/estagiario/agendamentos/confirmar/${solicitacaoId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                data_agendamento: dataFormatada,
-                observacoes: 'Triagem confirmada pelo estagiário'
+                data_agendamento: dataAgendamento,
+                observacoes: observacoes || 'Triagem confirmada pelo estagiário'
             })
         });
 
@@ -125,6 +128,11 @@ function mostrarPagina(paginaId) {
     // Carrega as solicitações quando a página de solicitações é exibida
     if (paginaId === 'pagina-solicitacoes') {
         carregarSolicitacoes();
+    }
+    
+    // Carrega as consultas quando a página de minhas consultas é exibida
+    if (paginaId === 'pagina-minhas-consultas') {
+        carregarConsultas();
     }
 }
 
@@ -215,6 +223,122 @@ function atualizarCalendarioConsultas(consultas) {
     });
 }
 
+// Função para atualizar a lista de consultas na página "Minhas Consultas"
+function atualizarListaConsultas(consultas) {
+    const consultasContainer = document.querySelector('.consultas-dia');
+    
+    if (!consultasContainer) {
+        console.error('Container de consultas não encontrado');
+        return;
+    }
+    
+    if (!consultas || consultas.length === 0) {
+        consultasContainer.innerHTML = `
+            <h3>Consultas do dia</h3>
+            <p>Nenhuma consulta encontrada.</p>
+        `;
+        return;
+    }
+    
+    let html = `
+        <h3>Consultas Confirmadas</h3>
+        <div class="consultas-lista">
+    `;
+    
+    consultas.forEach(consulta => {
+        const statusClass = getStatusClass(consulta.status);
+        const dataAgendamento = consulta.data_agendamento || 'Não agendada';
+        const pacienteNome = consulta.paciente_nome || 'N/A';
+        
+        html += `
+            <div class="consulta-item ${statusClass}">
+                <div class="consulta-header">
+                    <h4>Consulta #${consulta.id}</h4>
+                    <span class="status-badge ${statusClass}">${consulta.status}</span>
+                </div>
+                <div class="consulta-details">
+                    <p><strong>Paciente:</strong> ${pacienteNome}</p>
+                    <p><strong>Data de Solicitação:</strong> ${consulta.data_solicitacao || 'N/A'}</p>
+                    <p><strong>Data de Agendamento:</strong> ${dataAgendamento}</p>
+                    <p><strong>Observações:</strong> ${consulta.observacoes_paciente || 'Nenhuma'}</p>
+                </div>
+                <div class="consulta-actions">
+                    ${getAcoesConsulta(consulta)}
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    consultasContainer.innerHTML = html;
+}
+
+// Função para obter a classe CSS baseada no status da consulta
+function getStatusClass(status) {
+    switch(status) {
+        case 'solicitado':
+            return 'status-solicitado';
+        case 'confirmado':
+            return 'status-confirmado';
+        case 'concluido':
+            return 'status-concluido';
+        case 'cancelado':
+            return 'status-cancelado';
+        default:
+            return 'status-default';
+    }
+}
+
+// Função para obter as ações disponíveis para cada consulta
+function getAcoesConsulta(consulta) {
+    switch(consulta.status) {
+        case 'confirmado':
+            return `
+                <button class="btn btn-primary" onclick="finalizarConsulta(${consulta.id})">
+                    Finalizar Consulta
+                </button>
+            `;
+        case 'concluido':
+            return '<span class="text-muted">Consulta Finalizada</span>';
+        case 'solicitado':
+            return '<span class="text-muted">Aguardando Confirmação</span>';
+        default:
+            return '<span class="text-muted">Nenhuma Ação</span>';
+    }
+}
+
+// Função para finalizar uma consulta
+async function finalizarConsulta(consultaId) {
+    if (confirm('Deseja finalizar esta consulta?')) {
+        try {
+            const observacoes = prompt('Adicione observações sobre a consulta (opcional):') || '';
+            
+            const response = await fetch(`/api/estagiario/consultas/${consultaId}/concluir`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    observacoes: observacoes
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                mostrarToast('Consulta finalizada com sucesso!', 'success');
+                // Recarrega a lista de consultas
+                await carregarConsultas();
+            } else {
+                throw new Error(data.error || 'Erro ao finalizar consulta');
+            }
+        } catch (error) {
+            console.error('Erro ao finalizar consulta:', error);
+            mostrarToast(error.message || 'Erro ao finalizar consulta', 'error');
+        }
+    }
+}
+
 function mesAnterior() {
     // Lógica para navegar para o mês anterior
     mostrarToast('Navegando para o mês anterior');
@@ -235,7 +359,17 @@ function abrirModalConfirmacaoTriagem(paciente, data, solicitacaoId) {
     modal.dataset.data = data;
     modal.dataset.solicitacaoId = solicitacaoId;
     
-    textoModal.textContent = `Você está prestes a confirmar uma consulta de triagem para ${paciente} no dia ${data}. Deseja continuar?`;
+    textoModal.textContent = `Você está prestes a confirmar uma consulta de triagem para ${paciente}. Defina a data e horário da consulta abaixo:`;
+    
+    // Definir data mínima como hoje
+    const hoje = new Date();
+    const dataMinima = hoje.toISOString().split('T')[0];
+    document.getElementById('data-consulta').min = dataMinima;
+    
+    // Limpar campos
+    document.getElementById('data-consulta').value = '';
+    document.getElementById('hora-consulta').value = '';
+    document.getElementById('observacoes-consulta').value = '';
     
     modal.classList.add('active');
 }
@@ -249,7 +383,25 @@ function confirmarTriagem() {
         return;
     }
 
-    confirmarTriagemAPI(solicitacaoId);
+    // Validar campos obrigatórios
+    const dataConsulta = document.getElementById('data-consulta').value;
+    const horaConsulta = document.getElementById('hora-consulta').value;
+    const observacoes = document.getElementById('observacoes-consulta').value;
+
+    if (!dataConsulta) {
+        mostrarToast('Por favor, selecione a data da consulta', 'error');
+        return;
+    }
+
+    if (!horaConsulta) {
+        mostrarToast('Por favor, selecione o horário da consulta', 'error');
+        return;
+    }
+
+    // Combinar data e hora no formato correto
+    const dataAgendamento = `${dataConsulta}T${horaConsulta}`;
+
+    confirmarTriagemAPI(solicitacaoId, dataAgendamento, observacoes);
 }
 
 function fecharModalConfirmacaoTriagem() {
