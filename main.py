@@ -24,7 +24,16 @@ app.config.from_object(app_config.get(env_name, app_config['default']))
 
 # Aviso se email não configurado
 if not app.config.get('MAIL_USERNAME') or not app.config.get('MAIL_PASSWORD'):
-    app.logger.warning('Configurações de email ausentes. Defina MAIL_USERNAME/MAIL_PASSWORD nas variáveis de ambiente.')
+    app.logger.warning('=' * 60)
+    app.logger.warning('⚠️ Configurações de email ausentes!')
+    app.logger.warning('Defina MAIL_USERNAME/MAIL_PASSWORD nas variáveis de ambiente.')
+    app.logger.warning('=' * 60)
+else:
+    app.logger.info('=' * 60)
+    app.logger.info('✅ Configurações de email detectadas')
+    app.logger.info(f'✅ MAIL_USERNAME: {app.config.get("MAIL_USERNAME")}')
+    app.logger.info(f'✅ MAIL_SERVER: {app.config.get("MAIL_SERVER")}:{app.config.get("MAIL_PORT")}')
+    app.logger.info('=' * 60)
 
 # Inicializar o Flask-Mail
 mail = Mail(app)

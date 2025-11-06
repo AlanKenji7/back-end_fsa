@@ -48,12 +48,29 @@ def enviar_email_confirmacao_consulta(paciente_email, nome_paciente, data_consul
         username = app.config.get('MAIL_USERNAME')
         password = app.config.get('MAIL_PASSWORD')
         
+        # BUG CRÍTICO CORRIGIDO: Retornava True quando não havia credenciais!
         if not username or not password:
-            logger.warning("Credenciais de email não configuradas")
-            return True
+            logger.error("=" * 60)
+            logger.error("❌ CREDENCIAIS DE EMAIL NÃO CONFIGURADAS!")
+            logger.error(f"MAIL_USERNAME: {'✅ Configurado' if username else '❌ NÃO CONFIGURADO'}")
+            logger.error(f"MAIL_PASSWORD: {'✅ Configurado' if password else '❌ NÃO CONFIGURADO'}")
+            logger.error("=" * 60)
+            logger.error("Configure as variáveis de ambiente MAIL_USERNAME e MAIL_PASSWORD")
+            logger.error("Ou chame configurar_email_simples() antes de enviar emails")
+            return False
 
-        logger.info(f"Tentando enviar email para: {paciente_email}")
-        logger.info(f"Usando servidor: {app.config.get('MAIL_SERVER')}:{app.config.get('MAIL_PORT')}")
+        logger.info("=" * 60)
+        logger.info("📧 INICIANDO ENVIO DE EMAIL DE CONFIRMAÇÃO")
+        logger.info(f"📧 Destinatário: {paciente_email}")
+        logger.info(f"📧 Remetente: {username}")
+        logger.info(f"📧 Servidor SMTP: {app.config.get('MAIL_SERVER')}:{app.config.get('MAIL_PORT')}")
+        logger.info(f"📧 TLS: {app.config.get('MAIL_USE_TLS')}")
+        logger.info("=" * 60)
+        
+        # Verificar se Flask-Mail está inicializado
+        if not mail:
+            logger.error("❌ Flask-Mail não está inicializado!")
+            return False
         
         # Criar mensagem
         msg = Message(
@@ -352,29 +369,62 @@ Este é um email automático, por favor não responda.
         """
         
         # Enviar email
+        logger.info("📤 Tentando enviar email via SMTP...")
         mail.send(msg)
-        logger.info(f"✅ Email de confirmação de consulta enviado com sucesso para {paciente_email}")
+        logger.info("=" * 60)
+        logger.info(f"✅ Email de confirmação enviado COM SUCESSO para {paciente_email}")
+        logger.info("=" * 60)
         return True
         
     except Exception as e:
-        logger.error(f"❌ Erro ao enviar email de confirmação de consulta: {str(e)}")
-        logger.error(f"Detalhes do erro: {type(e).__name__}")
+        import traceback
+        logger.error("=" * 60)
+        logger.error("❌ ERRO CRÍTICO AO ENVIAR EMAIL!")
+        logger.error(f"❌ Tipo do erro: {type(e).__name__}")
+        logger.error(f"❌ Mensagem: {str(e)}")
+        logger.error("=" * 60)
+        logger.error("TRACEBACK COMPLETO:")
+        logger.error(traceback.format_exc())
+        logger.error("=" * 60)
+        
+        # Mensagens de erro mais específicas
+        error_msg = str(e).lower()
+        if 'authentication' in error_msg or 'login' in error_msg:
+            logger.error("💡 DICA: Verifique se a senha de APP do Gmail está correta")
+            logger.error("💡 DICA: Certifique-se de usar senha de APP, não senha normal")
+        elif 'connection' in error_msg or 'timeout' in error_msg:
+            logger.error("💡 DICA: Verifique sua conexão com internet")
+            logger.error("💡 DICA: Verifique se a porta 587 não está bloqueada")
+        elif 'ssl' in error_msg or 'tls' in error_msg:
+            logger.error("💡 DICA: Problema com TLS/SSL. Verifique configurações de segurança")
+        
         return False
 
 def configurar_email_simples():
     """
-    Verifica se as variáveis de email estão presentes na configuração.
+    Configuração simples do email - apenas para teste
+    ATENÇÃO: Esta função configura credenciais hardcoded. Use apenas para testes!
+    Para produção, use variáveis de ambiente.
     """
     try:
-        username = app.config.get('MAIL_USERNAME')
-        password = app.config.get('MAIL_PASSWORD')
-        if username and password:
-            logger.info("Configurações de email detectadas via variáveis de ambiente/config.")
-            return True
-        logger.warning("Configurações de email ausentes. Defina MAIL_USERNAME/MAIL_PASSWORD.")
-        return False
+        # Configurações básicas para Gmail
+        app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+        app.config['MAIL_PORT'] = 587
+        app.config['MAIL_USE_TLS'] = True
+        app.config['MAIL_USERNAME'] = 'fundacaofsaacex@gmail.com'
+        app.config['MAIL_PASSWORD'] = 'zdmd efek cxjc lgtj'
+        app.config['MAIL_DEFAULT_SENDER'] = 'fundacaofsaacex@gmail.com'
+        
+        logger.info("=" * 60)
+        logger.info("✅ Configuração de email carregada (hardcoded - apenas para testes)")
+        logger.info(f"✅ MAIL_USERNAME: {app.config['MAIL_USERNAME']}")
+        logger.info(f"✅ MAIL_SERVER: {app.config['MAIL_SERVER']}:{app.config['MAIL_PORT']}")
+        logger.info("=" * 60)
+        return True
     except Exception as e:
-        logger.error(f"Erro na verificação de configuração: {e}")
+        logger.error(f"❌ Erro na configuração: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 def gerar_token_redefinicao(email):
@@ -478,10 +528,27 @@ def enviar_email_redefinicao_senha(email, reset_url):
         password = app.config.get('MAIL_PASSWORD')
         
         if not username or not password:
-            logger.warning("Credenciais de email não configuradas")
+            logger.error("=" * 60)
+            logger.error("❌ CREDENCIAIS DE EMAIL NÃO CONFIGURADAS!")
+            logger.error(f"MAIL_USERNAME: {'✅ Configurado' if username else '❌ NÃO CONFIGURADO'}")
+            logger.error(f"MAIL_PASSWORD: {'✅ Configurado' if password else '❌ NÃO CONFIGURADO'}")
+            logger.error("=" * 60)
+            logger.error("Configure as variáveis de ambiente MAIL_USERNAME e MAIL_PASSWORD")
+            logger.error("Ou chame configurar_email_simples() antes de enviar emails")
             return False
 
-        logger.info(f"Tentando enviar email de redefinição para: {email}")
+        logger.info("=" * 60)
+        logger.info("📧 INICIANDO ENVIO DE EMAIL DE REDEFINIÇÃO DE SENHA")
+        logger.info(f"📧 Destinatário: {email}")
+        logger.info(f"📧 Remetente: {username}")
+        logger.info(f"📧 Servidor SMTP: {app.config.get('MAIL_SERVER')}:{app.config.get('MAIL_PORT')}")
+        logger.info(f"📧 TLS: {app.config.get('MAIL_USE_TLS')}")
+        logger.info("=" * 60)
+        
+        # Verificar se Flask-Mail está inicializado
+        if not mail:
+            logger.error("❌ Flask-Mail não está inicializado!")
+            return False
         
         # Criar mensagem
         msg = Message(
@@ -731,10 +798,33 @@ Este é um email automático, por favor não responda.
         """
         
         # Enviar email
+        logger.info("📤 Tentando enviar email de redefinição via SMTP...")
         mail.send(msg)
-        logger.info(f"✅ Email de redefinição enviado com sucesso para {email}")
+        logger.info("=" * 60)
+        logger.info(f"✅ Email de redefinição enviado COM SUCESSO para {email}")
+        logger.info("=" * 60)
         return True
         
     except Exception as e:
-        logger.error(f"❌ Erro ao enviar email de redefinição: {str(e)}")
+        import traceback
+        logger.error("=" * 60)
+        logger.error("❌ ERRO CRÍTICO AO ENVIAR EMAIL DE REDEFINIÇÃO!")
+        logger.error(f"❌ Tipo do erro: {type(e).__name__}")
+        logger.error(f"❌ Mensagem: {str(e)}")
+        logger.error("=" * 60)
+        logger.error("TRACEBACK COMPLETO:")
+        logger.error(traceback.format_exc())
+        logger.error("=" * 60)
+        
+        # Mensagens de erro mais específicas
+        error_msg = str(e).lower()
+        if 'authentication' in error_msg or 'login' in error_msg:
+            logger.error("💡 DICA: Verifique se a senha de APP do Gmail está correta")
+            logger.error("💡 DICA: Certifique-se de usar senha de APP, não senha normal")
+        elif 'connection' in error_msg or 'timeout' in error_msg:
+            logger.error("💡 DICA: Verifique sua conexão com internet")
+            logger.error("💡 DICA: Verifique se a porta 587 não está bloqueada")
+        elif 'ssl' in error_msg or 'tls' in error_msg:
+            logger.error("💡 DICA: Problema com TLS/SSL. Verifique configurações de segurança")
+        
         return False

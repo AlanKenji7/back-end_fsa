@@ -1,0 +1,72 @@
+/* Regras responsivas globais para todas as telas */
+html, body {
+    width: 100%;
+}
+
+img, video {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Wrappers e containers comuns */
+.container, .content, .card, .box, .wrapper, main, section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-left: 16px;
+    padding-right: 16px;
+}
+
+/* Tabelas com scroll em telas pequenas */
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+/* Formulários: inputs e botões ocupam toda largura no mobile */
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], select, textarea {
+    width: 100%;
+}
+
+button, .btn, input[type="submit"], a.button {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+/* Grid básico */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-left: -8px;
+    margin-right: -8px;
+}
+.col {
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+/* Breakpoints */
+@media (max-width: 992px) {
+    .hide-md-down { display: none !important; }
+}
+
+@media (max-width: 768px) {
+    .stack-sm { display: block !important; }
+    .two-col-sm { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .actions { display: grid; grid-template-columns: 1fr; gap: 12px; }
+}
+
+@media (max-width: 576px) {
+    body { font-size: 15px; }
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.3rem; }
+    h3 { font-size: 1.1rem; }
+    .card, .box { padding: 12px; }
+}
+
+
