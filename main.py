@@ -11,7 +11,7 @@ from config import config as app_config
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Carregar variáveis de ambienteS
+# Carregar variáveis de ambiente
 load_dotenv(override=True)
 
 app = Flask(__name__)
@@ -19,7 +19,12 @@ app = Flask(__name__)
 # Configurar logging do Flask
 app.logger.setLevel(logging.DEBUG)
 
+# Detectar ambiente - Render usa variável RENDER_EXTERNAL_URL quando está em produção
 env_name = os.getenv('FLASK_ENV', 'default')
+# Se estiver no Render e não tiver FLASK_ENV definido, usar produção
+if env_name == 'default' and os.getenv('RENDER_EXTERNAL_URL'):
+    env_name = 'production'
+    app.logger.info("🌐 Ambiente Render detectado - usando configuração de produção")
 app.config.from_object(app_config.get(env_name, app_config['default']))
 
 # Aviso se email não configurado
@@ -44,11 +49,17 @@ app.secret_key = app.config.get('SECRET_KEY', 'uma_chave_muito_secreta_e_complex
 db.init_app(app)
 migrate = Migrate(app, db)
 
+# Criar tabelas do banco de dados se não existirem (importante para produção)
+with app.app_context():
+    try:
+        db.create_all()
+        app.logger.info("✅ Banco de dados inicializado com sucesso")
+    except Exception as e:
+        app.logger.error(f"❌ Erro ao inicializar banco de dados: {e}")
+
 # Importar views DEPOIS de inicializar app e db
 from views import *
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    app.logger.info("Aplicação Flask iniciando...")
+    app.logger.info("Aplicação Flask iniciando em modo desenvolvimento...")
     app.run(debug=True) 
