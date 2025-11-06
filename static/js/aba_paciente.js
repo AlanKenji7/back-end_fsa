@@ -1,5 +1,9 @@
-// aba_paciente.js - VERSÃO INTEGRADA E SIMPLIFICADA
+// aba_paciente.js - VERSÃO FINAL CONSOLIDADA E CORRIGIDA
 console.log("DEBUG: aba_paciente.js CARREGADO E SENDO INTERPRETADO");
+
+// =============================================================================
+// CONFIGURAÇÕES E ESTADO
+// =============================================================================
 
 // --- Elementos Comuns (Cache de DOM para performance) ---
 const elements = {
@@ -14,16 +18,22 @@ const elements = {
     modalConfirmarPresenca: document.getElementById('modal-confirmar-presenca'),
     modalConfirmarCancelamento: document.getElementById('modal-confirmar-cancelamento'),
 
-    // Página Horários Triagem
-    selectDiaSemana: document.getElementById('select-dia-semana'),
-    selectPeriodo: document.getElementById('select-periodo'),
-    timeSlotsGrid: document.getElementById('time-slots-grid'),
+    // Página Horários Triagem - SELEÇÃO MÚLTIPLA
+    diasSemanaContainer: document.getElementById('dias-semana-container'),
+    periodosContainer: document.getElementById('periodos-container'),
+    horariosEspecificosContainer: document.getElementById('horarios-especificos-container'),
     scheduleSummary: document.getElementById('schedule-summary'),
-    selectedWeekdayDisplay: document.getElementById('selected-weekday-display'),
-    selectedPeriodDisplay: document.getElementById('selected-period-display'),
-    selectedTimeDisplay: document.getElementById('selected-time-display'),
+    selectedPreferencesDisplay: document.getElementById('selected-preferences-display'),
     triagemInfoConfirmacao: document.getElementById('triagem-info-confirmacao'),
     confirmSelectionButton: document.getElementById('confirm-selection-button'),
+
+    // Página Mudar Horário
+    mudarDiasSemanaContainer: document.getElementById('mudar-dias-semana-container'),
+    mudarPeriodosContainer: document.getElementById('mudar-periodos-container'),
+    mudarHorariosEspecificosContainer: document.getElementById('mudar-horarios-especificos-container'),
+    mudarScheduleSummary: document.getElementById('mudar-schedule-summary'),
+    mudarSelectedPreferencesDisplay: document.getElementById('mudar-selected-preferences-display'),
+    mudarConfirmSelectionButton: document.getElementById('mudar-confirm-selection-button'),
 
     // Página Minhas Consultas
     containerMeusAgendamentos: document.getElementById('container-meus-agendamentos'),
@@ -38,12 +48,10 @@ const elements = {
     consultaConfirmadaLocal: document.getElementById('consulta-confirmada-local'),
     consultaConfirmadaQrcode: document.getElementById('consulta-confirmada-qrcode'),
 
-    // Campos Minha Conta
+    // Campos Minha Conta - CORRIGIDO: Removidos elementos que não existem no HTML
     inputsMeusDados: document.querySelectorAll('#sub-aba-meus-dados input, #sub-aba-meus-dados select'),
     notifEmail: document.getElementById('notif-email'),
-    notifSms: document.getElementById('notif-sms'),
     notifApp: document.getElementById('notif-app'),
-    notifOfertas: document.getElementById('notif-ofertas'),
     senhaAtualInput: document.getElementById('senha-atual'),
     novaSenhaInput: document.getElementById('nova-senha'),
     confirmarNovaSenhaInput: document.getElementById('confirmar-nova-senha'),
@@ -55,40 +63,51 @@ const elements = {
     motivoNaoPosso: document.getElementById('motivo-nao-posso'),
 };
 
-// --- Estado Global (para dados temporários e gerenciamento de modais/ações) ---
+// --- Estado Global ---
 const appState = {
     currentActivePage: 'pagina-principal',
     selectedTriagem: {
-        diaSemana: null,
-        periodo: null,
-        horario: null
+        diasSemana: [], // Array para múltiplos dias
+        periodos: [],   // Array para múltiplos períodos
+        horariosEspecificos: [] // Array para horários específicos
     },
-    botaoHorarioAtivo: null, // Referência ao botão de horário selecionado
-    consultaEmContexto: null, // Variável para armazenar a consulta em ação (confirmar, cancelar, etc.)
+    selectedPreferenciasHorario: {
+        diasSemana: [], // Array para múltiplos dias
+        periodos: [],   // Array para múltiplos períodos
+        horariosEspecificos: [] // Array para horários específicos
+    },
+    consultaEmContexto: null,
     
+    // CORRIGIDO: Removidas preferências que não existem no HTML
     preferenciasNotificacao: {
         email: true,
-        sms: false,
-        app: true,
-        ofertas: false
+        app: true
     },
 
-    // Seus dados de horários por período, agora dentro de appState
+    // Horários disponíveis por período (CORRIGIDO - usando formato 24h)
     horariosPorPeriodo: {
         'Manhã': ["08:00", "09:00", "10:00", "11:00"],
         'Tarde': ["13:00", "14:00", "15:00", "16:00"],
-        'Noite': ["18:00", "19:00", "20:00", "21:00"]
-    }
+        'Noite': ["17:00", "18:00", "19:00"]
+    },
+
+    diasDaSemana: ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'],
+    periodosDisponiveis: ['Manhã', 'Tarde', 'Noite']
 };
 
-// --- Funções Utilitárias ---
+// =============================================================================
+// FUNÇÕES UTILITÁRIAS
+// =============================================================================
 
 function showToast(message, type = 'success') {
     const toast = elements.toastNotification;
+    if (!toast) {
+        console.warn('Elemento toast não encontrado');
+        return;
+    }
     toast.textContent = message;
-    toast.className = 'toast'; // Remove classes anteriores
-    toast.classList.add('show');
-    toast.classList.add(type);
+    toast.className = 'toast';
+    toast.classList.add('show', type);
     
     setTimeout(() => {
         toast.classList.remove('show');
@@ -96,86 +115,837 @@ function showToast(message, type = 'success') {
 }
 
 function showSpinner() {
-    elements.loadingSpinner.classList.add('active');
+    if (elements.loadingSpinner) {
+        elements.loadingSpinner.classList.add('active');
+    }
 }
 
 function hideSpinner() {
-    elements.loadingSpinner.classList.remove('active');
+    if (elements.loadingSpinner) {
+        elements.loadingSpinner.classList.remove('active');
+    }
 }
 
 function formatarDataParaExibicao(dataString) {
     if (!dataString) return '';
-    // Garante que a data está no formato YYYY-MM-DD
     const parts = dataString.split('-');
     if (parts.length === 3) {
-        return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
-    return dataString; // Retorna original se não for YYYY-MM-DD
+    return dataString;
 }
 
 function calcularHoraFim(horaInicio) {
     if (!horaInicio) return '';
     const [horas, minutos] = horaInicio.split(':').map(Number);
-    const data = new Date(); // Data arbitrária para cálculo
+    const data = new Date();
     data.setHours(horas, minutos, 0, 0);
-    data.setHours(data.getHours() + 1); // Adiciona 1 hora
+    data.setHours(data.getHours() + 1);
     return `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`;
 }
 
-// --- Funções de Navegação e Modais ---
+// =============================================================================
+// NAVEGAÇÃO E MODAIS
+// =============================================================================
 
-function goToPage(pageId) {
+function mostrarPagina(pageId) {
+    console.log(`[mostrarPagina] Tentando mostrar página: ${pageId}`);
+    
+    if (!elements.pages || elements.pages.length === 0) {
+        console.error('Nenhuma página encontrada no DOM');
+        return;
+    }
+    
     elements.pages.forEach(p => p.classList.remove('active'));
     const paginaAtiva = document.getElementById(pageId);
+    
     if (paginaAtiva) {
         paginaAtiva.classList.add('active');
-        appState.currentActivePage = pageId; // Atualiza o estado da página ativa
+        appState.currentActivePage = pageId;
+        console.log(`[mostrarPagina] Página ${pageId} ativada com sucesso`);
+    } else {
+        console.error(`[mostrarPagina] Página não encontrada: ${pageId}`);
     }
 
-    // Fecha todos os modais ao mudar de página
+    // Fechar todos os modais
     document.querySelectorAll('.modal-overlay').forEach(modal => {
         modal.classList.remove('active');
     });
-    document.body.classList.remove('modal-active'); // Garante que o corpo não tem a classe modal-active
+    document.body.classList.remove('modal-active');
 
-    // Ações específicas ao mudar de página
+    // Ações específicas por página
     if (pageId === 'pagina-consultas') {
         atualizarListaConsultas();
-    } else if (pageId === 'pagina-horarios-triagem') {
-        resetTriagemSelection(); // Reseta os campos da triagem
-        updateAvailableTimes(); // Garante que os horários são carregados ao entrar na página
     } else if (pageId === 'pagina-meus-dados') {
-        // Assegura que a primeira sub-aba 'Meus Dados' está ativa ao entrar na página
-        // E carrega as preferências de notificação
-        showSubTab('sub-aba-meus-dados', document.querySelector('.tab-button.active') || document.querySelector('.tab-button'));
+        setTimeout(() => {
+            const primeiraAba = document.querySelector('.tab-button');
+            if (primeiraAba) {
+                mostrarSubAba('sub-aba-meus-dados', primeiraAba);
+            }
+        }, 50);
         carregarPreferenciasNotificacao();
+    } else if (pageId === 'pagina-horarios-triagem') {
+        inicializarSelecaoHorarios();
     }
 }
 
 function toggleDropdown() {
-    elements.dropdownMenu.classList.toggle("show");
+    if (elements.dropdownMenu) {
+        elements.dropdownMenu.classList.toggle("show");
+    }
 }
 
-function showSubTab(subTabId, buttonElement) {
-    document.querySelectorAll('.sub-tab-content').forEach(tab => tab.classList.remove('active'));
-    document.getElementById(subTabId).classList.add('active');
-
-    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+function mostrarSubAba(subTabId, buttonElement) {
+    console.log("Mostrando sub-aba:", subTabId);
+    
+    document.querySelectorAll('.sub-tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    const subTabElement = document.getElementById(subTabId);
+    if (subTabElement) {
+        subTabElement.classList.add('active');
+        
+        // Inicializar a aba "Mudar Horário" quando for aberta
+        if (subTabId === 'sub-aba-mudar-horario') {
+            inicializarMudarHorario();
+        }
+    }
+    
     if (buttonElement) {
         buttonElement.classList.add('active');
     }
 }
 
 function openModal(modalElement) {
-    modalElement.classList.add('active');
-    document.body.classList.add('modal-active'); // Adiciona a classe ao body para evitar scroll
+    if (modalElement) {
+        modalElement.classList.add('active');
+        document.body.classList.add('modal-active');
+    }
 }
 
-// --- Funções da Página "Minha Conta" ---
+function closeModal(modalElement) {
+    console.log("[closeModal] Fechando modal:", modalElement ? modalElement.id : 'Elemento Nulo');
+    if (modalElement) {
+        modalElement.classList.remove('active');
+    }
+    if (!document.querySelector('.modal-overlay.active')) {
+        document.body.classList.remove('modal-active');
+    }
+    console.log("[closeModal] Limpando appState.consultaEmContexto.");
+    appState.consultaEmContexto = null;
+}
 
-function enableEditMode() {
+// =============================================================================
+// SELEÇÃO DE HORÁRIOS DE TRIAGEM (MÚLTIPLOS) - CORRIGIDO
+// =============================================================================
+
+function inicializarSelecaoHorarios() {
+    // Limpar seleções anteriores
+    appState.selectedTriagem = {
+        diasSemana: [],
+        periodos: [],
+        horariosEspecificos: []
+    };
+    
+    // Criar botões para dias da semana
+    criarBotoesSelecao(elements.diasSemanaContainer, appState.diasDaSemana, 'diasSemana');
+    
+    // Criar botões para períodos
+    criarBotoesSelecao(elements.periodosContainer, appState.periodosDisponiveis, 'periodos');
+    
+    // Inicialmente esconder horários específicos
+    if (elements.horariosEspecificosContainer) {
+        elements.horariosEspecificosContainer.style.display = 'none';
+    }
+    if (elements.scheduleSummary) {
+        elements.scheduleSummary.style.display = 'none';
+    }
+}
+
+function criarBotoesSelecao(container, opcoes, tipo) {
+    if (!container) {
+        console.error('Container não encontrado para criar botões');
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    opcoes.forEach(opcao => {
+        const botao = document.createElement('button');
+        botao.type = 'button';
+        botao.className = 'selection-button';
+        botao.textContent = opcao;
+        botao.dataset.value = opcao;
+        
+        botao.addEventListener('click', () => {
+            toggleSelecao(botao, tipo, opcao);
+        });
+        
+        container.appendChild(botao);
+    });
+}
+
+function toggleSelecao(botao, tipo, valor) {
+    botao.classList.toggle('selected');
+    
+    const arraySelecionado = appState.selectedTriagem[tipo];
+    const index = arraySelecionado.indexOf(valor);
+    
+    if (index > -1) {
+        // Remover se já estiver selecionado
+        arraySelecionado.splice(index, 1);
+    } else {
+        // Adicionar se não estiver selecionado
+        arraySelecionado.push(valor);
+    }
+    
+    // Atualizar interface baseado nas seleções
+    atualizarInterfaceAposSelecao();
+}
+
+function atualizarInterfaceAposSelecao() {
+    // Mostrar/ocultar horários específicos baseado nas seleções
+    if (appState.selectedTriagem.diasSemana.length > 0 && appState.selectedTriagem.periodos.length > 0) {
+        mostrarHorariosEspecificos();
+        if (elements.horariosEspecificosContainer) {
+            elements.horariosEspecificosContainer.style.display = 'block';
+        }
+    } else {
+        if (elements.horariosEspecificosContainer) {
+            elements.horariosEspecificosContainer.style.display = 'none';
+        }
+        if (elements.scheduleSummary) {
+            elements.scheduleSummary.style.display = 'none';
+        }
+    }
+    
+    // Atualizar resumo
+    atualizarResumoSelecao();
+}
+
+function mostrarHorariosEspecificos() {
+    const container = elements.horariosEspecificosContainer;
+    if (!container) return;
+    
+    container.innerHTML = '<h3>Horários Específicos</h3>';
+    
+    // Para cada período selecionado, mostrar os horários disponíveis
+    appState.selectedTriagem.periodos.forEach(periodo => {
+        const horarios = appState.horariosPorPeriodo[periodo];
+        if (horarios) {
+            const periodoSection = document.createElement('div');
+            periodoSection.className = 'periodo-section';
+            periodoSection.innerHTML = `<h4>${periodo}</h4>`;
+            
+            const horariosGrid = document.createElement('div');
+            horariosGrid.className = 'horarios-grid';
+            
+            horarios.forEach(horario => {
+                const horarioBtn = document.createElement('button');
+                horarioBtn.type = 'button';
+                horarioBtn.className = 'horario-button';
+                horarioBtn.textContent = horario;
+                horarioBtn.dataset.periodo = periodo;
+                horarioBtn.dataset.horario = horario;
+                
+                // Verificar se já está selecionado
+                const jaSelecionado = appState.selectedTriagem.horariosEspecificos.some(h => 
+                    h.periodo === periodo && h.horario === horario
+                );
+                
+                if (jaSelecionado) {
+                    horarioBtn.classList.add('selected');
+                }
+                
+                horarioBtn.addEventListener('click', () => {
+                    toggleHorarioEspecifico(horarioBtn, periodo, horario);
+                });
+                
+                horariosGrid.appendChild(horarioBtn);
+            });
+            
+            periodoSection.appendChild(horariosGrid);
+            container.appendChild(periodoSection);
+        }
+    });
+}
+
+function toggleHorarioEspecifico(botao, periodo, horario) {
+    botao.classList.toggle('selected');
+    
+    const horarioObj = { periodo, horario };
+    const arrayHorarios = appState.selectedTriagem.horariosEspecificos;
+    const index = arrayHorarios.findIndex(h => 
+        h.periodo === periodo && h.horario === horario
+    );
+    
+    if (index > -1) {
+        // Remover se já estiver selecionado
+        arrayHorarios.splice(index, 1);
+    } else {
+        // Adicionar se não estiver selecionado
+        arrayHorarios.push(horarioObj);
+    }
+    
+    atualizarResumoSelecao();
+}
+
+function atualizarResumoSelecao() {
+    const resumo = elements.selectedPreferencesDisplay;
+    const summaryContainer = elements.scheduleSummary;
+    
+    if (!resumo || !summaryContainer) return;
+    
+    if (appState.selectedTriagem.diasSemana.length === 0 && 
+        appState.selectedTriagem.periodos.length === 0 && 
+        appState.selectedTriagem.horariosEspecificos.length === 0) {
+        summaryContainer.style.display = 'none';
+        return;
+    }
+    
+    let htmlResumo = '';
+    
+    // Dias selecionados
+    if (appState.selectedTriagem.diasSemana.length > 0) {
+        htmlResumo += `<p><strong>Dias:</strong> ${appState.selectedTriagem.diasSemana.join(', ')}</p>`;
+    }
+    
+    // Períodos selecionados
+    if (appState.selectedTriagem.periodos.length > 0) {
+        htmlResumo += `<p><strong>Períodos:</strong> ${appState.selectedTriagem.periodos.join(', ')}</p>`;
+    }
+    
+    // Horários específicos selecionados
+    if (appState.selectedTriagem.horariosEspecificos.length > 0) {
+        // Agrupar horários por período para melhor exibição
+        const horariosPorPeriodo = {};
+        appState.selectedTriagem.horariosEspecificos.forEach(h => {
+            if (!horariosPorPeriodo[h.periodo]) {
+                horariosPorPeriodo[h.periodo] = [];
+            }
+            horariosPorPeriodo[h.periodo].push(h.horario);
+        });
+        
+        htmlResumo += `<p><strong>Horários Preferenciais:</strong></p>`;
+        Object.keys(horariosPorPeriodo).forEach(periodo => {
+            htmlResumo += `<p style="margin-left: 10px;">${periodo}: ${horariosPorPeriodo[periodo].join(', ')}</p>`;
+        });
+    }
+    
+    resumo.innerHTML = htmlResumo;
+    summaryContainer.style.display = 'block';
+}
+
+function validarEabrirModalTriagem() {
+    // Validação mínima - pelo menos um dia, um período e um horário específico
+    if (appState.selectedTriagem.diasSemana.length === 0) {
+        showToast('Por favor, selecione pelo menos um dia da semana.', 'error');
+        return;
+    }
+    
+    if (appState.selectedTriagem.periodos.length === 0) {
+        showToast('Por favor, selecione pelo menos um período.', 'error');
+        return;
+    }
+    
+    if (appState.selectedTriagem.horariosEspecificos.length === 0) {
+        showToast('Por favor, selecione pelo menos um horário específico.', 'error');
+        return;
+    }
+    
+    // Prepara informações para o modal (MELHORADO)
+    let infoText = '';
+    
+    infoText += `<strong>Dias Preferidos:</strong> ${appState.selectedTriagem.diasSemana.join(', ')}<br>`;
+    infoText += `<strong>Períodos Preferidos:</strong> ${appState.selectedTriagem.periodos.join(', ')}<br>`;
+    
+    // Horários específicos
+    const horariosPorPeriodo = {};
+    appState.selectedTriagem.horariosEspecificos.forEach(h => {
+        if (!horariosPorPeriodo[h.periodo]) {
+            horariosPorPeriodo[h.periodo] = [];
+        }
+        horariosPorPeriodo[h.periodo].push(h.horario);
+    });
+    
+    infoText += `<strong>Horários Preferenciais:</strong><br>`;
+    Object.keys(horariosPorPeriodo).forEach(periodo => {
+        infoText += `• ${periodo}: ${horariosPorPeriodo[periodo].join(', ')}<br>`;
+    });
+    
+    if (elements.triagemInfoConfirmacao) {
+        elements.triagemInfoConfirmacao.innerHTML = infoText;
+    }
+    openModal(elements.modalTriagem);
+}
+
+// FUNÇÃO PRINCIPAL CORRIGIDA - ENVIO DA TRIAGEM
+async function enviarSolicitacaoTriagem() {
+    const confirmButton = document.getElementById('btn-confirmar-envio-triagem');
+    if (!confirmButton) {
+        console.error('Botão de confirmação não encontrado');
+        return;
+    }
+
+    if (confirmButton.disabled) {
+        return;
+    }
+    
+    confirmButton.disabled = true;
+    confirmButton.textContent = 'Enviando...';
+
+    closeModal(elements.modalTriagem);
+    showSpinner();
+
+    try {
+        // Validação final
+        if (appState.selectedTriagem.diasSemana.length === 0 || 
+            appState.selectedTriagem.periodos.length === 0 || 
+            appState.selectedTriagem.horariosEspecificos.length === 0) {
+            throw new Error('Seleção incompleta. Por favor, selecione dia, período e horários.');
+        }
+
+        // FORMATO CORRETO DOS DADOS PARA O BACKEND
+        // CORREÇÃO CRÍTICA: Criar observações detalhadas e estruturadas
+        const observacoes = criarObservacoesDetalhadas();
+        
+        const dadosParaEnvio = {
+            tipo_atendimento: 'Solicitação de Triagem',
+            status: 'solicitado',
+            observacoes: observacoes,
+            data_solicitacao: new Date().toISOString(),
+            // Adicionando dados estruturados para facilitar o processamento
+            preferencias_paciente: {
+                dias_semana: appState.selectedTriagem.diasSemana,
+                periodos: appState.selectedTriagem.periodos,
+                horarios_especificos: appState.selectedTriagem.horariosEspecificos
+            }
+        };
+
+        console.log('Enviando dados para triagem:', dadosParaEnvio);
+
+        const response = await fetch('/api/agendamentos/solicitar', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dadosParaEnvio),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Erro no servidor ao enviar a solicitação.');
+        }
+
+        showToast('Solicitação de triagem enviada com sucesso!', 'success');
+        resetTriagemSelection();
+        mostrarPagina('pagina-triagem-sucesso');
+        
+    } catch (error) {
+        console.error('Erro ao solicitar triagem:', error);
+        showToast(error.message || 'Erro de comunicação com o servidor. Tente novamente.', 'error');
+        
+        // Reabre o modal em caso de erro para o usuário tentar novamente
+        setTimeout(() => {
+            openModal(elements.modalTriagem);
+        }, 500);
+    } finally {
+        hideSpinner();
+        if (confirmButton) {
+            confirmButton.disabled = false;
+            confirmButton.textContent = 'CONFIRMAR';
+        }
+    }
+}
+
+// FUNÇÃO MELHORADA PARA CRIAR OBSERVAÇÕES DETALHADAS
+function criarObservacoesDetalhadas() {
+    const { diasSemana, periodos, horariosEspecificos } = appState.selectedTriagem;
+    
+    let observacoes = "SOLICITAÇÃO DE TRIAGEM - PREFERÊNCIAS DO PACIENTE\n\n";
+    
+    // Dias da semana
+    observacoes += `📅 DIAS PREFERIDOS: ${diasSemana.join(', ')}\n`;
+    
+    // Períodos
+    observacoes += `⏰ PERÍODOS PREFERIDOS: ${periodos.join(', ')}\n\n`;
+    
+    // Horários específicos agrupados por período
+    observacoes += "🕐 HORÁRIOS ESPECÍFICOS SELECIONADOS:\n";
+    
+    const horariosPorPeriodo = {};
+    horariosEspecificos.forEach(h => {
+        if (!horariosPorPeriodo[h.periodo]) {
+            horariosPorPeriodo[h.periodo] = [];
+        }
+        horariosPorPeriodo[h.periodo].push(h.horario);
+    });
+    
+    Object.keys(horariosPorPeriodo).forEach(periodo => {
+        observacoes += `• ${periodo}: ${horariosPorPeriodo[periodo].join(', ')}\n`;
+    });
+    
+    observacoes += `\n📋 RESUMO: Paciente está disponível nas ${diasSemana.length > 1 ? 'dias' : 'dia'} ${diasSemana.join(', ')} `;
+    observacoes += `nos períodos da ${periodos.join(', ')} `;
+    observacoes += `nos horários específicos informados acima.`;
+    
+    return observacoes;
+}
+
+function resetTriagemSelection() {
+    appState.selectedTriagem = {
+        diasSemana: [],
+        periodos: [],
+        horariosEspecificos: []
+    };
+    
+    // Resetar interface - limpar todos os botões selecionados
+    document.querySelectorAll('#dias-semana-container .selection-button').forEach(btn => {
+        btn.classList.remove('selected');
+    });
+    
+    document.querySelectorAll('#periodos-container .selection-button').forEach(btn => {
+        btn.classList.remove('selected');
+    });
+    
+    document.querySelectorAll('.horario-button').forEach(btn => {
+        btn.classList.remove('selected');
+    });
+    
+    if (elements.horariosEspecificosContainer) {
+        elements.horariosEspecificosContainer.innerHTML = '';
+        elements.horariosEspecificosContainer.style.display = 'none';
+    }
+    if (elements.scheduleSummary) {
+        elements.scheduleSummary.style.display = 'none';
+    }
+}
+
+// =============================================================================
+// MUDAR HORÁRIO - FUNCIONALIDADE COMPLETA
+// =============================================================================
+
+function inicializarMudarHorario() {
+    console.log("Inicializando aba Mudar Horário");
+    
+    // Limpar seleções anteriores
+    appState.selectedPreferenciasHorario = {
+        diasSemana: [],
+        periodos: [],
+        horariosEspecificos: []
+    };
+    
+    // Criar botões para dias da semana
+    criarBotoesSelecaoMudarHorario(elements.mudarDiasSemanaContainer, appState.diasDaSemana, 'diasSemana');
+    
+    // Criar botões para períodos
+    criarBotoesSelecaoMudarHorario(elements.mudarPeriodosContainer, appState.periodosDisponiveis, 'periodos');
+    
+    // Inicialmente esconder horários específicos
+    if (elements.mudarHorariosEspecificosContainer) {
+        elements.mudarHorariosEspecificosContainer.style.display = 'none';
+    }
+    if (elements.mudarScheduleSummary) {
+        elements.mudarScheduleSummary.style.display = 'none';
+    }
+    
+    // Carregar preferências salvas se existirem
+    carregarPreferenciasSalvas();
+}
+
+function criarBotoesSelecaoMudarHorario(container, opcoes, tipo) {
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    opcoes.forEach(opcao => {
+        const botao = document.createElement('button');
+        botao.type = 'button';
+        botao.className = 'selection-button';
+        botao.textContent = opcao;
+        botao.dataset.value = opcao;
+        
+        botao.addEventListener('click', () => {
+            toggleSelecaoMudarHorario(botao, tipo, opcao);
+        });
+        
+        container.appendChild(botao);
+    });
+}
+
+function toggleSelecaoMudarHorario(botao, tipo, valor) {
+    botao.classList.toggle('selected');
+    
+    const arraySelecionado = appState.selectedPreferenciasHorario[tipo];
+    const index = arraySelecionado.indexOf(valor);
+    
+    if (index > -1) {
+        // Remover se já estiver selecionado
+        arraySelecionado.splice(index, 1);
+    } else {
+        // Adicionar se não estiver selecionado
+        arraySelecionado.push(valor);
+    }
+    
+    // Atualizar interface baseado nas seleções
+    atualizarInterfaceAposSelecaoMudarHorario();
+}
+
+function atualizarInterfaceAposSelecaoMudarHorario() {
+    // Mostrar/ocultar horários específicos baseado nas seleções
+    if (appState.selectedPreferenciasHorario.diasSemana.length > 0 && appState.selectedPreferenciasHorario.periodos.length > 0) {
+        mostrarHorariosEspecificosMudarHorario();
+        if (elements.mudarHorariosEspecificosContainer) {
+            elements.mudarHorariosEspecificosContainer.style.display = 'block';
+        }
+    } else {
+        if (elements.mudarHorariosEspecificosContainer) {
+            elements.mudarHorariosEspecificosContainer.style.display = 'none';
+        }
+        if (elements.mudarScheduleSummary) {
+            elements.mudarScheduleSummary.style.display = 'none';
+        }
+    }
+    
+    // Atualizar resumo
+    atualizarResumoSelecaoMudarHorario();
+}
+
+function mostrarHorariosEspecificosMudarHorario() {
+    const container = elements.mudarHorariosEspecificosContainer;
+    if (!container) return;
+    
+    container.innerHTML = '<h3>Horários Específicos Preferidos</h3>';
+    
+    // Para cada período selecionado, mostrar os horários disponíveis
+    appState.selectedPreferenciasHorario.periodos.forEach(periodo => {
+        const horarios = appState.horariosPorPeriodo[periodo];
+        if (horarios) {
+            const periodoSection = document.createElement('div');
+            periodoSection.className = 'periodo-section';
+            periodoSection.innerHTML = `<h4>${periodo}</h4>`;
+            
+            const horariosGrid = document.createElement('div');
+            horariosGrid.className = 'horarios-grid';
+            
+            horarios.forEach(horario => {
+                const horarioBtn = document.createElement('button');
+                horarioBtn.type = 'button';
+                horarioBtn.className = 'horario-button';
+                horarioBtn.textContent = horario;
+                horarioBtn.dataset.periodo = periodo;
+                horarioBtn.dataset.horario = horario;
+                
+                // Verificar se já está selecionado
+                const jaSelecionado = appState.selectedPreferenciasHorario.horariosEspecificos.some(h => 
+                    h.periodo === periodo && h.horario === horario
+                );
+                
+                if (jaSelecionado) {
+                    horarioBtn.classList.add('selected');
+                }
+                
+                horarioBtn.addEventListener('click', () => {
+                    toggleHorarioEspecificoMudarHorario(horarioBtn, periodo, horario);
+                });
+                
+                horariosGrid.appendChild(horarioBtn);
+            });
+            
+            periodoSection.appendChild(horariosGrid);
+            container.appendChild(periodoSection);
+        }
+    });
+}
+
+function toggleHorarioEspecificoMudarHorario(botao, periodo, horario) {
+    botao.classList.toggle('selected');
+    
+    const horarioObj = { periodo, horario };
+    const arrayHorarios = appState.selectedPreferenciasHorario.horariosEspecificos;
+    const index = arrayHorarios.findIndex(h => 
+        h.periodo === periodo && h.horario === horario
+    );
+    
+    if (index > -1) {
+        // Remover se já estiver selecionado
+        arrayHorarios.splice(index, 1);
+    } else {
+        // Adicionar se não estiver selecionado
+        arrayHorarios.push(horarioObj);
+    }
+    
+    atualizarResumoSelecaoMudarHorario();
+}
+
+function atualizarResumoSelecaoMudarHorario() {
+    const resumo = elements.mudarSelectedPreferencesDisplay;
+    const summaryContainer = elements.mudarScheduleSummary;
+    
+    if (!resumo || !summaryContainer) return;
+    
+    if (appState.selectedPreferenciasHorario.diasSemana.length === 0 && 
+        appState.selectedPreferenciasHorario.periodos.length === 0 && 
+        appState.selectedPreferenciasHorario.horariosEspecificos.length === 0) {
+        summaryContainer.style.display = 'none';
+        return;
+    }
+    
+    let htmlResumo = '';
+    
+    // Dias selecionados
+    if (appState.selectedPreferenciasHorario.diasSemana.length > 0) {
+        htmlResumo += `<p><strong>Dias Preferidos:</strong> ${appState.selectedPreferenciasHorario.diasSemana.join(', ')}</p>`;
+    }
+    
+    // Períodos selecionados
+    if (appState.selectedPreferenciasHorario.periodos.length > 0) {
+        htmlResumo += `<p><strong>Períodos Preferidos:</strong> ${appState.selectedPreferenciasHorario.periodos.join(', ')}</p>`;
+    }
+    
+    // Horários específicos selecionados
+    if (appState.selectedPreferenciasHorario.horariosEspecificos.length > 0) {
+        // Agrupar horários por período para melhor exibição
+        const horariosPorPeriodo = {};
+        appState.selectedPreferenciasHorario.horariosEspecificos.forEach(h => {
+            if (!horariosPorPeriodo[h.periodo]) {
+                horariosPorPeriodo[h.periodo] = [];
+            }
+            horariosPorPeriodo[h.periodo].push(h.horario);
+        });
+        
+        htmlResumo += `<p><strong>Horários Preferenciais:</strong></p>`;
+        Object.keys(horariosPorPeriodo).forEach(periodo => {
+            htmlResumo += `<p style="margin-left: 10px;">${periodo}: ${horariosPorPeriodo[periodo].join(', ')}</p>`;
+        });
+    }
+    
+    resumo.innerHTML = htmlResumo;
+    summaryContainer.style.display = 'block';
+}
+
+function carregarPreferenciasSalvas() {
+    // Simular carregamento de preferências salvas (em uma aplicação real, isso viria de uma API)
+    const preferenciasSalvas = JSON.parse(localStorage.getItem('preferenciasHorarioPaciente') || 'null');
+    
+    if (preferenciasSalvas) {
+        appState.selectedPreferenciasHorario = preferenciasSalvas;
+        
+        // Atualizar interface com as preferências salvas
+        atualizarInterfaceComPreferenciasSalvas();
+        showToast('Preferências carregadas com sucesso!', 'success');
+    }
+}
+
+function atualizarInterfaceComPreferenciasSalvas() {
+    // Atualizar botões de dias da semana
+    document.querySelectorAll('#mudar-dias-semana-container .selection-button').forEach(botao => {
+        const valor = botao.dataset.value;
+        if (appState.selectedPreferenciasHorario.diasSemana.includes(valor)) {
+            botao.classList.add('selected');
+        } else {
+            botao.classList.remove('selected');
+        }
+    });
+    
+    // Atualizar botões de períodos
+    document.querySelectorAll('#mudar-periodos-container .selection-button').forEach(botao => {
+        const valor = botao.dataset.value;
+        if (appState.selectedPreferenciasHorario.periodos.includes(valor)) {
+            botao.classList.add('selected');
+        } else {
+            botao.classList.remove('selected');
+        }
+    });
+    
+    // Atualizar interface
+    atualizarInterfaceAposSelecaoMudarHorario();
+}
+
+async function salvarPreferenciasHorario() {
+    // Validação mínima
+    if (appState.selectedPreferenciasHorario.diasSemana.length === 0) {
+        showToast('Por favor, selecione pelo menos um dia da semana.', 'error');
+        return;
+    }
+    
+    if (appState.selectedPreferenciasHorario.periodos.length === 0) {
+        showToast('Por favor, selecione pelo menos um período.', 'error');
+        return;
+    }
+    
+    if (appState.selectedPreferenciasHorario.horariosEspecificos.length === 0) {
+        showToast('Por favor, selecione pelo menos um horário específico.', 'error');
+        return;
+    }
+    
+    showSpinner();
+
+    try {
+        // Simular salvamento (em uma aplicação real, isso seria uma chamada API)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Salvar no localStorage para demonstração
+        localStorage.setItem('preferenciasHorarioPaciente', JSON.stringify(appState.selectedPreferenciasHorario));
+        
+        showToast('Preferências de horário salvas com sucesso!', 'success');
+        
+    } catch (error) {
+        console.error('Erro ao salvar preferências:', error);
+        showToast('Erro ao salvar preferências. Tente novamente.', 'error');
+    } finally {
+        hideSpinner();
+    }
+}
+
+function limparPreferenciasHorario() {
+    // Limpar estado
+    appState.selectedPreferenciasHorario = {
+        diasSemana: [],
+        periodos: [],
+        horariosEspecificos: []
+    };
+    
+    // Limpar interface
+    document.querySelectorAll('#mudar-dias-semana-container .selection-button').forEach(botao => {
+        botao.classList.remove('selected');
+    });
+    
+    document.querySelectorAll('#mudar-periodos-container .selection-button').forEach(botao => {
+        botao.classList.remove('selected');
+    });
+    
+    if (elements.mudarHorariosEspecificosContainer) {
+        elements.mudarHorariosEspecificosContainer.innerHTML = '';
+        elements.mudarHorariosEspecificosContainer.style.display = 'none';
+    }
+    if (elements.mudarScheduleSummary) {
+        elements.mudarScheduleSummary.style.display = 'none';
+    }
+    
+    // Limpar do localStorage
+    localStorage.removeItem('preferenciasHorarioPaciente');
+    
+    showToast('Preferências limpas com sucesso!', 'success');
+}
+
+// =============================================================================
+// MINHA CONTA - FUNCIONALIDADES COMPLETAS
+// =============================================================================
+
+function habilitarEdicao() {
+    if (!elements.inputsMeusDados || elements.inputsMeusDados.length === 0) {
+        console.error('Elementos de inputs não encontrados');
+        return;
+    }
+    
     elements.inputsMeusDados.forEach(input => {
-        // Mantém disabled para campos que não devem ser editáveis pelo paciente (Nome Completo, Data Nasc, CPF)
         if (input.id !== 'nome-completo' && input.id !== 'data-nascimento' && input.id !== 'cpf') {
             input.disabled = false;
         }
@@ -183,30 +953,30 @@ function enableEditMode() {
     showToast("Campos habilitados para edição.", "info");
 }
 
-function saveAccountData() {
+function salvarDados() {
     showSpinner();
 
-    // Coleta os dados dos campos editáveis
     const formData = new FormData();
     formData.append('genero', document.getElementById('genero').value);
     formData.append('telefone', document.getElementById('telefone').value);
     formData.append('email', document.getElementById('email').value);
-    formData.append('endereco', document.getElementById('endereco').value); // O endereço já está combinado
+    formData.append('endereco', document.getElementById('endereco').value);
 
     fetch('/atualizar_dados_paciente', {
         method: 'POST',
-        body: new URLSearchParams(formData) // Envia como form-urlencoded
+        body: new URLSearchParams(formData)
     })
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
             showToast(data.message, 'success');
-            // Desabilita os campos novamente após o sucesso
-            elements.inputsMeusDados.forEach(input => {
-                if (input.id !== 'nome-completo' && input.id !== 'data-nascimento' && input.id !== 'cpf') {
-                    input.disabled = true;
-                }
-            });
+            if (elements.inputsMeusDados) {
+                elements.inputsMeusDados.forEach(input => {
+                    if (input.id !== 'nome-completo' && input.id !== 'data-nascimento' && input.id !== 'cpf') {
+                        input.disabled = true;
+                    }
+                });
+            }
         } else {
             showToast(data.message, 'error');
         }
@@ -221,48 +991,70 @@ function saveAccountData() {
 }
 
 function carregarPreferenciasNotificacao() {
-    elements.notifEmail.checked = appState.preferenciasNotificacao.email;
-    elements.notifSms.checked = appState.preferenciasNotificacao.sms;
-    elements.notifApp.checked = appState.preferenciasNotificacao.app;
-    elements.notifOfertas.checked = appState.preferenciasNotificacao.ofertas;
+    if (elements.notifEmail) {
+        elements.notifEmail.checked = appState.preferenciasNotificacao.email;
+    }
+    if (elements.notifApp) {
+        elements.notifApp.checked = appState.preferenciasNotificacao.app;
+    }
 }
 
-function saveNotificationPreferences() {
+function salvarNotificacoes() {
     showSpinner();
     setTimeout(() => {
         hideSpinner();
-        appState.preferenciasNotificacao.email = elements.notifEmail.checked;
-        appState.preferenciasNotificacao.sms = elements.notifSms.checked;
-        appState.preferenciasNotificacao.app = elements.notifApp.checked;
-        appState.preferenciasNotificacao.ofertas = elements.notifOfertas.checked;
+        if (elements.notifEmail) {
+            appState.preferenciasNotificacao.email = elements.notifEmail.checked;
+        }
+        if (elements.notifApp) {
+            appState.preferenciasNotificacao.app = elements.notifApp.checked;
+        }
         showToast("Preferências de notificação salvas (simulado)!", "success");
     }, 800);
 }
 
-function changePassword() {
+async function mudarSenha() {
+    console.log("DEBUG: Função mudarSenha() chamada");
+    
+    if (!elements.senhaAtualInput || !elements.novaSenhaInput || !elements.confirmarNovaSenhaInput) {
+        console.error("Elementos de senha não encontrados");
+        showToast("Erro: Campos de senha não carregados corretamente.", "error");
+        return;
+    }
+
     const senhaAtual = elements.senhaAtualInput.value;
     const novaSenha = elements.novaSenhaInput.value;
     const confirmarNovaSenha = elements.confirmarNovaSenhaInput.value;
 
-    elements.errorSenhaAtual.textContent = '';
-    elements.errorNovaSenha.textContent = '';
-    elements.errorConfirmarNovaSenha.textContent = '';
+    // Limpar mensagens de erro anteriores e estilos
+    limparErrosSenha();
 
     let hasError = false;
 
+    // Validações básicas
     if (!senhaAtual) {
-        elements.errorSenhaAtual.textContent = 'Digite sua senha atual.';
+        mostrarErro('error-senha-atual', 'Digite sua senha atual.');
+        elements.senhaAtualInput.classList.add('error');
         hasError = true;
     }
+
     if (!novaSenha) {
-        elements.errorNovaSenha.textContent = 'Digite sua nova senha.';
+        mostrarErro('error-nova-senha', 'Digite sua nova senha.');
+        elements.novaSenhaInput.classList.add('error');
         hasError = true;
     } else if (novaSenha.length < 6) {
-        elements.errorNovaSenha.textContent = 'A nova senha deve ter no mínimo 6 caracteres.';
+        mostrarErro('error-nova-senha', 'A nova senha deve ter no mínimo 6 caracteres.');
+        elements.novaSenhaInput.classList.add('error');
         hasError = true;
     }
-    if (novaSenha !== confirmarNovaSenha) {
-        elements.errorConfirmarNovaSenha.textContent = 'As senhas não coincidem.';
+
+    if (!confirmarNovaSenha) {
+        mostrarErro('error-confirmar-nova-senha', 'Confirme sua nova senha.');
+        elements.confirmarNovaSenhaInput.classList.add('error');
+        hasError = true;
+    } else if (novaSenha !== confirmarNovaSenha) {
+        mostrarErro('error-confirmar-nova-senha', 'As senhas não coincidem.');
+        elements.confirmarNovaSenhaInput.classList.add('error');
         hasError = true;
     }
 
@@ -272,215 +1064,142 @@ function changePassword() {
     }
 
     showSpinner();
-    setTimeout(() => {
-        hideSpinner();
-        showToast("Senha alterada (simulado)!", "success");
-        elements.senhaAtualInput.value = '';
-        elements.novaSenhaInput.value = '';
-        elements.confirmarNovaSenhaInput.value = '';
-    }, 800);
-}
-
-// --- Funções da Página "Horários de Triagem" ---
-
-function updateAvailableTimes() {
-    const diaSemana = elements.selectDiaSemana.value;
-    const periodo = elements.selectPeriodo.value;
-    elements.timeSlotsGrid.innerHTML = '';
-    
-    // Limpa mensagens de erro e resumo ao mudar a seleção
-    document.getElementById('error-dia-semana').textContent = '';
-    document.getElementById('error-periodo').textContent = '';
-    document.getElementById('error-horario-especifico').textContent = '';
-    
-    appState.selectedTriagem.horario = null; // Reseta o horário selecionado da triagem
-    elements.scheduleSummary.style.display = 'none';
-
-    if (appState.botaoHorarioAtivo) {
-        appState.botaoHorarioAtivo.classList.remove('selected');
-        appState.botaoHorarioAtivo = null;
-    }
-
-    if (diaSemana && periodo) {
-        const horariosDoPeriodo = appState.horariosPorPeriodo[periodo] || [];
-        if (horariosDoPeriodo.length > 0) {
-            horariosDoPeriodo.forEach(horario => {
-                const button = document.createElement('button');
-                button.classList.add('time-slot-button');
-                button.textContent = `${horario} - ${calcularHoraFim(horario)}`;
-                button.dataset.time = horario; // Guarda o horário no dataset
-                button.addEventListener('click', () => selectTriagemTime(button));
-                elements.timeSlotsGrid.appendChild(button);
-            });
-        } else {
-            elements.timeSlotsGrid.innerHTML = '<p class="no-available-slots">Nenhum horário disponível para o período selecionado.</p>';
-        }
-    } else {
-        elements.timeSlotsGrid.innerHTML = '<p class="no-available-slots">Selecione o dia da semana e o período para ver os horários.</p>';
-    }
-}
-
-function selectTriagemTime(button) {
-    if (appState.botaoHorarioAtivo) {
-        appState.botaoHorarioAtivo.classList.remove('selected');
-    }
-    button.classList.add('selected');
-    appState.botaoHorarioAtivo = button;
-
-    appState.selectedTriagem.diaSemana = elements.selectDiaSemana.value;
-    appState.selectedTriagem.periodo = elements.selectPeriodo.value;
-    appState.selectedTriagem.horario = button.dataset.time; // Pega do dataset do botão
-
-    elements.selectedWeekdayDisplay.textContent = appState.selectedTriagem.diaSemana;
-    elements.selectedPeriodDisplay.textContent = appState.selectedTriagem.periodo;
-    elements.selectedTimeDisplay.textContent = `${appState.selectedTriagem.horario} - ${calcularHoraFim(appState.selectedTriagem.horario)}`;
-    elements.scheduleSummary.style.display = 'block';
-
-    document.getElementById('error-horario-especifico').textContent = '';
-}
-
-function validateAndOpenTriagemModal() {
-    let hasError = false;
-    if (!appState.selectedTriagem.diaSemana) {
-        document.getElementById('error-dia-semana').textContent = 'Selecione o dia da semana.';
-        hasError = true;
-    }
-    if (!appState.selectedTriagem.periodo) {
-        document.getElementById('error-periodo').textContent = 'Selecione o período.';
-        hasError = true;
-    }
-    if (!appState.selectedTriagem.horario) {
-        document.getElementById('error-horario-especifico').textContent = 'Selecione um horário específico.';
-        hasError = true;
-    }
-
-    if (hasError) {
-        showToast("Por favor, preencha todos os campos obrigatórios.", "error");
-        return;
-    }
-
-    elements.triagemInfoConfirmacao.textContent = `${appState.selectedTriagem.diaSemana} - ${appState.selectedTriagem.periodo} às ${appState.selectedTriagem.horario}`;
-    openModal(elements.modalTriagem);
-}
-
-async function confirmTriagemRequest() {
-    // Desabilita o botão para evitar múltiplos cliques
-    const confirmButton = document.getElementById('btn-confirmar-envio-triagem');
-    if (!confirmButton) {
-        console.error('Botão de confirmação não encontrado');
-        return;
-    }
-
-    if (confirmButton.disabled) {
-        return; // Evita múltiplas chamadas simultâneas
-    }
-    
-    confirmButton.disabled = true;
-    confirmButton.textContent = 'Enviando...';
-
-    closeModal(elements.modalTriagem);
-    showSpinner();
-
-    const { diaSemana, periodo, horario } = appState.selectedTriagem;
-    if (!diaSemana || !periodo || !horario) {
-        showToast('Por favor, selecione todos os campos necessários.', 'error');
-        confirmButton.disabled = false;
-        confirmButton.textContent = 'CONFIRMAR';
-        hideSpinner();
-        return;
-    }
-
-    const observacoes = `Paciente solicitou atendimento na ${diaSemana}, no período da ${periodo}, por volta das ${horario}.`;
 
     try {
-        const response = await fetch('/api/agendamentos/solicitar', {
+        // Chamada API real para alterar senha
+        const response = await fetch('/api/paciente/alterar-senha', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ observacoes }),
+            body: JSON.stringify({
+                senha_atual: senhaAtual,
+                nova_senha: novaSenha,
+                confirmar_senha: confirmarNovaSenha
+            })
         });
 
         const data = await response.json();
 
-        if (!response.ok) {
-            throw new Error(data.error || 'Ocorreu um erro ao enviar a solicitação.');
+        if (response.ok) {
+            showToast("Senha alterada com sucesso!", "success");
+            // Limpar campos
+            limparFormularioSenha();
+        } else {
+            // Tratar erros específicos do servidor
+            if (data.error && data.error.includes('senha atual')) {
+                mostrarErro('error-senha-atual', 'Senha atual incorreta.');
+                elements.senhaAtualInput.classList.add('error');
+                showToast("Senha atual incorreta. Tente novamente.", "error");
+            } else {
+                showToast(data.error || "Erro ao alterar senha. Tente novamente.", "error");
+            }
         }
 
-        // Se chegou aqui, a solicitação foi bem-sucedida
-        showToast('Solicitação de triagem enviada com sucesso!', 'success');
-        resetTriagemSelection();
-        goToPage('pagina-triagem-sucesso');
     } catch (error) {
-        console.error('Erro ao solicitar triagem:', error);
-        showToast(error.message || 'Erro de comunicação com o servidor. Tente novamente.', 'error');
+        console.error('Erro ao alterar senha:', error);
+        showToast("Erro de conexão. Tente novamente.", "error");
     } finally {
         hideSpinner();
-        // Reabilita o botão independentemente do resultado
-        if (confirmButton) {
-            confirmButton.disabled = false;
-            confirmButton.textContent = 'CONFIRMAR';
-        }
     }
 }
 
-// Função para resetar a seleção de triagem
-function resetTriagemSelection() {
-    appState.selectedTriagem = {
-        diaSemana: null,
-        periodo: null,
-        horario: null
-    };
-
-    // Resetar os selects
-    const selectDiaSemana = document.getElementById('select-dia-semana');
-    const selectPeriodo = document.getElementById('select-periodo');
-    if (selectDiaSemana) selectDiaSemana.value = '';
-    if (selectPeriodo) selectPeriodo.value = '';
-
-    // Limpar a grade de horários
-    const timeSlotsGrid = document.getElementById('time-slots-grid');
-    if (timeSlotsGrid) timeSlotsGrid.innerHTML = '';
-
-    // Esconder o resumo
-    const scheduleSummary = document.getElementById('schedule-summary');
-    if (scheduleSummary) scheduleSummary.style.display = 'none';
-
+// Funções auxiliares para manipulação de erros
+function limparErrosSenha() {
     // Limpar mensagens de erro
     const errorElements = [
-        'error-dia-semana',
-        'error-periodo',
-        'error-horario-especifico'
+        'error-senha-atual',
+        'error-nova-senha', 
+        'error-confirmar-nova-senha'
     ];
+    
     errorElements.forEach(id => {
         const element = document.getElementById(id);
-        if (element) element.textContent = '';
+        if (element) {
+            element.classList.remove('show');
+            element.textContent = '';
+        }
     });
+    
+    // Limpar classes de erro dos inputs
+    if (elements.senhaAtualInput) elements.senhaAtualInput.classList.remove('error');
+    if (elements.novaSenhaInput) elements.novaSenhaInput.classList.remove('error');
+    if (elements.confirmarNovaSenhaInput) elements.confirmarNovaSenhaInput.classList.remove('error');
 }
 
-// --- Funções da Página "Minhas Consultas" ---
+function mostrarErro(elementId, mensagem) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.textContent = mensagem;
+        element.classList.add('show');
+    }
+}
 
-// Função para comparar datas e horários de consultas para ordenação
+function limparFormularioSenha() {
+    if (elements.senhaAtualInput) elements.senhaAtualInput.value = '';
+    if (elements.novaSenhaInput) elements.novaSenhaInput.value = '';
+    if (elements.confirmarNovaSenhaInput) elements.confirmarNovaSenhaInput.value = '';
+    limparErrosSenha();
+}
+
+// Adicionar event listeners para limpar erros quando o usuário digitar
+document.addEventListener('DOMContentLoaded', function() {
+    // Limpar erro da senha atual ao digitar
+    if (elements.senhaAtualInput) {
+        elements.senhaAtualInput.addEventListener('input', function() {
+            this.classList.remove('error');
+            const errorElement = document.getElementById('error-senha-atual');
+            if (errorElement) errorElement.classList.remove('show');
+        });
+    }
+    
+    // Limpar erro da nova senha ao digitar
+    if (elements.novaSenhaInput) {
+        elements.novaSenhaInput.addEventListener('input', function() {
+            this.classList.remove('error');
+            const errorElement = document.getElementById('error-nova-senha');
+            if (errorElement) errorElement.classList.remove('show');
+        });
+    }
+    
+    // Limpar erro da confirmação ao digitar
+    if (elements.confirmarNovaSenhaInput) {
+        elements.confirmarNovaSenhaInput.addEventListener('input', function() {
+            this.classList.remove('error');
+            const errorElement = document.getElementById('error-confirmar-nova-senha');
+            if (errorElement) errorElement.classList.remove('show');
+        });
+    }
+});
+
+// =============================================================================
+// MINHAS CONSULTAS - FUNCIONALIDADES COMPLETAS
+// =============================================================================
+
 function compareAppointments(a, b) {
     const dataA = a.data_agendamento ? new Date(a.data_agendamento) : (a.data_solicitacao ? new Date(a.data_solicitacao) : null);
     const dataB = b.data_agendamento ? new Date(b.data_agendamento) : (b.data_solicitacao ? new Date(b.data_solicitacao) : null);
 
-    // Priorizar agendamentos com data_agendamento
     if (a.data_agendamento && !b.data_agendamento) return -1;
     if (!a.data_agendamento && b.data_agendamento) return 1;
 
-    // Se ambos têm ou não têm data_agendamento, ordenar pela data (agendamento ou solicitação)
     if (dataA && dataB) {
-        return dataB - dataA; // Mais recentes primeiro
+        return dataB - dataA;
     } else if (dataA) {
-        return -1; // A com data vem antes
+        return -1;
     } else if (dataB) {
-        return 1;  // B com data vem antes
+        return 1;
     }
     return 0;
 }
 
+// Função melhorada para carregar consultas do paciente
 async function atualizarListaConsultas() {
+    if (!elements.containerMeusAgendamentos || !elements.noAppointmentsMessage) {
+        console.error('Elementos de consultas não encontrados');
+        return;
+    }
+    
     elements.containerMeusAgendamentos.innerHTML = '';
     elements.noAppointmentsMessage.style.display = 'none';
     showSpinner();
@@ -502,13 +1221,11 @@ async function atualizarListaConsultas() {
         elements.containerMeusAgendamentos.style.display = 'grid';
         agendamentos.sort(compareAppointments);
 
-        // Filtra apenas as solicitações de triagem não concluídas e consultas ativas
+        // Filtrar apenas consultas ativas (solicitações pendentes e consultas confirmadas)
         const consultasFiltradas = agendamentos.filter(ag => {
-            // Mantém apenas solicitações de triagem não concluídas
             if (ag.tipo_atendimento === 'Solicitação de Triagem') {
                 return ag.status === 'solicitado';
             }
-            // Mantém apenas consultas ativas
             if (ag.tipo_atendimento === 'Consulta') {
                 return ['confirmado', 'agendado'].includes(ag.status);
             }
@@ -534,13 +1251,38 @@ async function atualizarListaConsultas() {
 
             if (agendamento.tipo_atendimento === 'Solicitação de Triagem') {
                 tituloAgendamento.textContent = `Solicitação de Triagem`;
-                const dataSolicitacao = new Date(agendamento.data_solicitacao);
-                detalhesAgendamento.textContent = `Enviada em: ${dataSolicitacao.toLocaleDateString('pt-BR')} às ${dataSolicitacao.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`;
+                let dataFormatada = 'Data não disponível';
+                if (agendamento.data_solicitacao) {
+                    try {
+                        const dataSolicitacao = new Date(agendamento.data_solicitacao);
+                        if (!isNaN(dataSolicitacao.getTime())) {
+                            dataFormatada = `Enviada em: ${dataSolicitacao.toLocaleDateString('pt-BR')} às ${dataSolicitacao.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`;
+                        }
+                    } catch (e) {
+                        console.error('Erro ao formatar data:', e);
+                    }
+                }
+                detalhesAgendamento.textContent = dataFormatada;
             } else {
                 tituloAgendamento.textContent = `Consulta Agendada`;
-                const dataAg = new Date(agendamento.data_agendamento);
+                let dataInfo = 'Data: A definir';
+                let horarioInfo = '';
+                
+                if (agendamento.data_agendamento) {
+                    try {
+                        const dataAg = new Date(agendamento.data_agendamento);
+                        if (!isNaN(dataAg.getTime())) {
+                            dataInfo = `Data: ${dataAg.toLocaleDateString('pt-BR')}`;
+                            horarioInfo = `Horário: ${dataAg.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                        }
+                    } catch (e) {
+                        console.error('Erro ao formatar data:', e);
+                    }
+                }
+                
                 detalhesAgendamento.innerHTML = `
-                    Data: ${dataAg.toLocaleDateString('pt-BR')} às ${dataAg.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}<br>
+                    ${dataInfo}<br>
+                    ${horarioInfo}<br>
                     Estagiário(a): ${agendamento.estagiario_nome || 'A definir'}
                 `;
             }
@@ -559,7 +1301,7 @@ async function atualizarListaConsultas() {
             const botaoDetalhes = document.createElement('button');
             botaoDetalhes.className = 'btn btn-outline';
             botaoDetalhes.textContent = 'Ver Detalhes';
-            botaoDetalhes.onclick = () => viewAppointmentDetails(agendamento);
+            botaoDetalhes.onclick = () => mostrarDetalhesConsulta(agendamento);
             cardActions.appendChild(botaoDetalhes);
 
             card.appendChild(cardInfo);
@@ -575,61 +1317,204 @@ async function atualizarListaConsultas() {
     }
 }
 
-function viewAppointmentDetails(consulta) {
-    console.log("[viewAppointmentDetails] Iniciada com consulta:", consulta ? JSON.parse(JSON.stringify(consulta)) : consulta);
-    appState.consultaEmContexto = consulta; // Define a consulta em contexto
-    const conteudo = elements.detalhesConsultaConteudo;
+// Função melhorada para mostrar detalhes da consulta com sistema de rolagem
+function mostrarDetalhesConsulta(consulta) {
+    console.log("[mostrarDetalhesConsulta] Iniciada com consulta:", consulta);
+    appState.consultaEmContexto = consulta;
+    
+    if (!elements.modalDetalhesConsulta) {
+        console.error('Modal de detalhes não encontrado');
+        return;
+    }
+    
+    // Criar estrutura do modal com scroll mantendo design original
+    elements.modalDetalhesConsulta.innerHTML = `
+        <div class="modal-content">
+            <div class="detalhes-consulta-header">
+                <h2>Detalhes da Consulta</h2>
+            </div>
+            <div class="detalhes-consulta-body" id="detalhes-consulta-body">
+                <div class="detalhes-consulta-container">
+                    <!-- Conteúdo será preenchido aqui mantendo o design original -->
+                </div>
+            </div>
+            <div class="detalhes-consulta-footer">
+                <button class="action-button secondary" onclick="fecharModalDetalhes()">Fechar</button>
+            </div>
+        </div>
+    `;
+    
+    const container = document.querySelector('.detalhes-consulta-container');
+    
+    if (!container) {
+        console.error('Container de detalhes não encontrado');
+        return;
+    }
+    
+    // Adicionar loading state
+    container.innerHTML = `
+        <div class="detalhes-loading">
+            <div class="spinner" style="width: 40px; height: 40px; border-width: 4px;"></div>
+            <p style="margin-top: 1rem;">Carregando detalhes da consulta...</p>
+        </div>
+    `;
+    
+    // Simular carregamento (em produção, remover este timeout)
+    setTimeout(() => {
+        preencherDetalhesConsulta(container, consulta);
+    }, 500);
+    
+    openModal(elements.modalDetalhesConsulta);
+}
+
+// Função para preencher os detalhes da consulta mantendo design original
+function preencherDetalhesConsulta(container, consulta) {
+    if (!consulta) {
+        container.innerHTML = `
+            <div class="detalhes-error">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="#dc3545">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                </svg>
+                <h3 style="margin: 1rem 0 0.5rem 0;">Erro ao carregar</h3>
+                <p>Não foi possível carregar os detalhes da consulta.</p>
+            </div>
+        `;
+        return;
+    }
 
     let dataExibicao = "A definir";
     let horarioExibicao = "A definir";
 
     if (consulta.data_agendamento) {
-        const dataAg = new Date(consulta.data_agendamento);
-        dataExibicao = dataAg.toLocaleDateString('pt-BR');
-        horarioExibicao = dataAg.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        try {
+            const dataAg = new Date(consulta.data_agendamento);
+            if (!isNaN(dataAg.getTime())) {
+                dataExibicao = dataAg.toLocaleDateString('pt-BR');
+                horarioExibicao = dataAg.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            }
+        } catch (e) {
+            console.error('Erro ao formatar data de agendamento:', e);
+        }
     } else if (consulta.tipo_atendimento === 'Solicitação de Triagem' && consulta.data_solicitacao) {
-        const dataSol = new Date(consulta.data_solicitacao);
-        dataExibicao = `Solicitado em ${dataSol.toLocaleDateString('pt-BR')}`;
-        horarioExibicao = dataSol.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        try {
+            const dataSol = new Date(consulta.data_solicitacao);
+            if (!isNaN(dataSol.getTime())) {
+                dataExibicao = `Solicitado em ${dataSol.toLocaleDateString('pt-BR')}`;
+                horarioExibicao = dataSol.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            }
+        } catch (e) {
+            console.error('Erro ao formatar data de solicitação:', e);
+        }
     }
 
-    conteudo.innerHTML = `
-        <p><strong>Tipo:</strong> ${consulta.tipo_atendimento}</p>
-        <p><strong>Estagiário/a:</strong> ${consulta.estagiario_nome || (consulta.tipo_atendimento === 'Solicitação de Triagem' ? 'Aguardando atribuição' : 'Não definido')}</p>
-        <p><strong>Data:</strong> ${dataExibicao}</p>
-        <p><strong>Horário:</strong> ${horarioExibicao}</p>
-        <p><strong>Local:</strong> COEPP - Fundação Santo André (Sala a ser definida)</p>
-        <p><strong>Status:</strong> <span class="status-text ${consulta.status.replace('_', '-')}">${consulta.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span></p>
+    const tipoAtendimento = consulta.tipo_atendimento === 'Solicitação de Triagem' ? 'Solicitação de Triagem' : 'Consulta';
+    const statusClass = consulta.status.replace('_', '-');
+
+    let html = `
+        <div class="detalhes-consulta-info">
+            <div class="detalhes-consulta-item">
+                <span class="detalhes-consulta-label">Tipo:</span>
+                <span class="detalhes-consulta-valor">${tipoAtendimento}</span>
+            </div>
+            
+            <div class="detalhes-consulta-item">
+                <span class="detalhes-consulta-label">Estagiário(a):</span>
+                <span class="detalhes-consulta-valor">${consulta.estagiario_nome || (consulta.tipo_atendimento === 'Solicitação de Triagem' ? 'Aguardando atribuição' : 'Não definido')}</span>
+            </div>
+            
+            <div class="detalhes-consulta-item">
+                <span class="detalhes-consulta-label">Data:</span>
+                <span class="detalhes-consulta-valor">${dataExibicao}</span>
+            </div>
+            
+            <div class="detalhes-consulta-item">
+                <span class="detalhes-consulta-label">Horário:</span>
+                <span class="detalhes-consulta-valor">${horarioExibicao}</span>
+            </div>
+            
+            <div class="detalhes-consulta-item">
+                <span class="detalhes-consulta-label">Local:</span>
+                <span class="detalhes-consulta-valor">COEPP - Fundação Santo André (Sala a ser definida)</span>
+            </div>
+            
+            <div class="detalhes-consulta-item">
+                <span class="detalhes-consulta-label">Status:</span>
+                <span class="detalhes-consulta-valor">
+                    <span class="status-text ${statusClass}">
+                        ${consulta.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </span>
+                </span>
+            </div>
+        </div>
     `;
 
-    // Adicionar botões de ação condicionalmente
-    if (consulta.status !== 'cancelado_paciente' && consulta.status !== 'cancelado_estagiario' && consulta.status !== 'finalizado') {
-        conteudo.innerHTML += `
-                <h3 style="margin-top: 20px;">Ações</h3>
-                <div style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
-                    <button class="action-button danger" id="btn-detalhes-cancelar-${consulta.id}">Cancelar Agendamento</button>
-                    ${consulta.data_agendamento ? '<button class="action-button warning" disabled>Reagendar (Em breve)</button>' : ''}
-                </div>`;
-        
-        // Adiciona o event listener dinamicamente para garantir que 'consulta' seja o objeto correto.
-        // Usar setTimeout para garantir que o elemento está no DOM antes de adicionar o listener.
-        setTimeout(() => {
-            const cancelButton = document.getElementById(`btn-detalhes-cancelar-${consulta.id}`);
-            if (cancelButton) {
-                console.log(`[viewAppointmentDetails] Botão #btn-detalhes-cancelar-${consulta.id} ENCONTRADO. Adicionando onclick.`);
-                cancelButton.onclick = () => {
-                    console.log(`[viewAppointmentDetails] Botão #btn-detalhes-cancelar-${consulta.id} CLICADO. Chamando openCancelAppointmentModal com:`, consulta ? JSON.parse(JSON.stringify(consulta)) : consulta);
-                    openCancelAppointmentModal(consulta); 
-                };
-            } else {
-                console.error(`[viewAppointmentDetails] ERRO: Botão #btn-detalhes-cancelar-${consulta.id} NÃO encontrado no DOM.`);
-            }
-        }, 0);
+    // Adicionar observações se existirem
+    if (consulta.observacoes_estagiario) {
+        html += `
+            <div class="detalhes-consulta-item">
+                <span class="detalhes-consulta-label">Observações:</span>
+                <span class="detalhes-consulta-valor">${consulta.observacoes_estagiario}</span>
+            </div>
+        `;
     }
-    openModal(elements.modalDetalhesConsulta);
+
+    // Adicionar ações se a consulta não estiver cancelada ou finalizada
+    if (consulta.status !== 'cancelado_paciente' && consulta.status !== 'cancelado_estagiario' && consulta.status !== 'finalizado') {
+        html += `
+            <div class="detalhes-consulta-acoes">
+                <button class="action-button danger" id="btn-detalhes-cancelar-${consulta.id}">
+                    Cancelar ${consulta.tipo_atendimento === 'Solicitação de Triagem' ? 'Solicitação' : 'Consulta'}
+                </button>
+                ${consulta.data_agendamento ? `
+                    <button class="action-button warning" disabled>
+                        Reagendar (Em breve)
+                    </button>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+
+    // Configurar evento do botão de cancelamento
+    setTimeout(() => {
+        const cancelButton = document.getElementById(`btn-detalhes-cancelar-${consulta.id}`);
+        if (cancelButton) {
+            console.log(`[preencherDetalhesConsulta] Botão #btn-detalhes-cancelar-${consulta.id} ENCONTRADO.`);
+            cancelButton.onclick = () => {
+                console.log(`[preencherDetalhesConsulta] Botão cancelar clicado para consulta:`, consulta);
+                abrirModalConfirmarCancelamento(consulta);
+            };
+        } else {
+            console.log(`[preencherDetalhesConsulta] Botão de cancelamento não encontrado (pode ser normal para consultas finalizadas/canceladas)`);
+        }
+    }, 100);
 }
 
-async function cancelAppointment() {
+// Função atualizada para fechar o modal
+function fecharModalDetalhes() {
+    if (elements.modalDetalhesConsulta) {
+        // Restaurar estrutura original do modal para próxima abertura
+        elements.modalDetalhesConsulta.innerHTML = `
+            <div class="modal-content">
+                <h2>Detalhes da Consulta</h2>
+                <div id="detalhes-consulta-conteudo">
+                    <!-- Conteúdo será preenchido dinamicamente -->
+                </div>
+                <div class="modal-action-buttons">
+                    <button class="action-button secondary" onclick="fecharModalDetalhes()">Fechar</button>
+                </div>
+            </div>
+        `;
+        
+        // Atualizar referência ao conteúdo
+        elements.detalhesConsultaConteudo = document.getElementById('detalhes-consulta-conteudo');
+    }
+    
+    closeModal(elements.modalDetalhesConsulta);
+}
+
+async function executarCancelamentoFinal() {
     if (!appState.consultaEmContexto) {
         showToast('Erro: Nenhuma consulta selecionada.', 'error');
         return;
@@ -648,9 +1533,9 @@ async function cancelAppointment() {
 
         if (response.ok) {
             showToast(data.message, 'success');
-            closeModal(elements.modalConfirmarCancelamento);
-            await atualizarListaConsultas(); // Atualiza a lista após o cancelamento
-            goToPage('pagina-consultas');
+            fecharModalConfirmarCancelamento();
+            await atualizarListaConsultas();
+            mostrarPagina('pagina-consultas');
         } else {
             showToast(data.error || 'Erro ao cancelar a consulta.', 'error');
         }
@@ -662,7 +1547,7 @@ async function cancelAppointment() {
     }
 }
 
-function openCancelAppointmentModal(consulta) {
+function abrirModalConfirmarCancelamento(consulta) {
     if (!consulta) {
         showToast('Erro: Nenhuma consulta selecionada.', 'error');
         return;
@@ -671,75 +1556,43 @@ function openCancelAppointmentModal(consulta) {
     openModal(elements.modalConfirmarCancelamento);
 }
 
-function showCannotAttendPage(consulta) { // Renomeada de 'mostrarPaginaNaoPosso'
-    appState.consultaEmContexto = consulta;
-    goToPage('pagina-nao-posso-comparecer');
+function fecharModalConfirmarCancelamento() {
+    closeModal(elements.modalConfirmarCancelamento);
 }
 
-function closeCannotAttendPage() { // Renomeada de 'fecharNaoPosso'
-    goToPage('pagina-consultas');
-    elements.motivoNaoPosso.value = ''; // Limpa o campo de texto
-    appState.consultaEmContexto = null;
+function fecharModalDetalhes() {
+    closeModal(elements.modalDetalhesConsulta);
 }
 
-function sendCannotAttendReasonAndCancel() { // Renomeada de 'enviarNaoPosso'
-    if (!appState.consultaEmContexto) {
-        showToast('Erro: Nenhuma consulta selecionada.');
-        return;
-    }
-    
-    const motivo = elements.motivoNaoPosso.value;
-    if (!motivo.trim()) {
-        showToast('Por favor, informe o motivo da sua ausência.', "error");
-        return;
-    }
-    
-    showSpinner();
-    setTimeout(() => {
-        hideSpinner();
-        // No lugar de alterar o estado local, chamamos a função de cancelamento que interage com o backend
-        // e depois atualiza a lista.
-        // A lógica de "motivo" pode ser adicionada ao corpo da requisição de cancelamento se necessário.
-        // Por ora, vamos apenas cancelar.
-        if (appState.consultaEmContexto) {
-            cancelAppointment(); // Reutiliza a função de cancelamento
-            goToPage('pagina-consultas');
-            elements.motivoNaoPosso.value = ''; // Limpa o campo
-            appState.consultaEmContexto = null;
-            showToast('Solicitação de cancelamento enviada.', "success");
-        } else {
-            showToast('Erro ao cancelar consulta.', "error");
-        }
-    }, 1500);
-}
+// =============================================================================
+// CONSULTA CONFIRMADA - FUNCIONALIDADES
+// =============================================================================
 
-// Função para gerar o QR Code
-function generateQRCode() { // Renomeada de 'gerarQRCode'
+function gerarQRCode() {
     const qrCodeContainer = elements.consultaConfirmadaQrcode;
+    if (!qrCodeContainer) return;
     
-    // Limpa o conteúdo anterior
     qrCodeContainer.innerHTML = '';
     
     const qrCodeImg = document.createElement('img');
     
-     const consultaInfo = appState.consultaEmContexto ? {
-         paciente: document.getElementById('nome-completo') ? document.getElementById('nome-completo').value : "Paciente",
-         data: appState.consultaEmContexto.data_agendamento ? new Date(appState.consultaEmContexto.data_agendamento).toLocaleDateString('pt-BR') : 'A Definir',
-         hora: appState.consultaEmContexto.data_agendamento ? new Date(appState.consultaEmContexto.data_agendamento).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : 'A Definir',
-         local: 'COEPP - Fundação Santo André',  // Local fixo por enquanto
-         tipo: appState.consultaEmContexto.tipo_atendimento,
-         estagiario: appState.consultaEmContexto.estagiario_nome || "A definir",
-         id: appState.consultaEmContexto.id
-     } : {
-         // Dados mínimos para um QR code válido, mesmo sem consulta
-         paciente: document.getElementById('nome-completo') ? document.getElementById('nome-completo').value : "Paciente",
-         data: 'A Definir',
-         hora: 'A Definir',
-         local: 'COEPP - Fundação Santo André',
-         tipo: 'Solicitação de Triagem',
-         estagiario: 'A Definir',
-         id: 'Sem agendamento'
-     };
+    const consultaInfo = appState.consultaEmContexto ? {
+        paciente: document.getElementById('nome-completo') ? document.getElementById('nome-completo').value : "Paciente",
+        data: appState.consultaEmContexto.data_agendamento ? new Date(appState.consultaEmContexto.data_agendamento).toLocaleDateString('pt-BR') : 'A Definir',
+        hora: appState.consultaEmContexto.data_agendamento ? new Date(appState.consultaEmContexto.data_agendamento).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : 'A Definir',
+        local: 'COEPP - Fundação Santo André',
+        tipo: appState.consultaEmContexto.tipo_atendimento,
+        estagiario: appState.consultaEmContexto.estagiario_nome || "A definir",
+        id: appState.consultaEmContexto.id
+    } : {
+        paciente: document.getElementById('nome-completo') ? document.getElementById('nome-completo').value : "Paciente",
+        data: 'A Definir',
+        hora: 'A Definir',
+        local: 'COEPP - Fundação Santo André',
+        tipo: 'Solicitação de Triagem',
+        estagiario: 'A Definir',
+        id: 'Sem agendamento'
+    };
     
     const qrData = JSON.stringify(consultaInfo);
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData)}`;
@@ -752,9 +1605,8 @@ function generateQRCode() { // Renomeada de 'gerarQRCode'
     qrCodeContainer.appendChild(qrCodeImg);
 }
 
-// Função para baixar o QR Code
-function downloadQRCode() { // Renomeada de 'baixarQRCode'
-    const qrCodeImg = elements.consultaConfirmadaQrcode.querySelector('img');
+function baixarQRCode() {
+    const qrCodeImg = elements.consultaConfirmadaQrcode ? elements.consultaConfirmadaQrcode.querySelector('img') : null;
     
     if (!qrCodeImg) {
         showToast('Erro: QR Code não encontrado.', "error");
@@ -763,8 +1615,8 @@ function downloadQRCode() { // Renomeada de 'baixarQRCode'
     
     const downloadLink = document.createElement('a');
     
-    const dataFormatada = elements.consultaConfirmadaData.textContent.replace(/\//g, '-');
-    const horario = elements.consultaConfirmadaHorario.textContent.replace('h', '-');
+    const dataFormatada = elements.consultaConfirmadaData ? elements.consultaConfirmadaData.textContent.replace(/\//g, '-') : 'data';
+    const horario = elements.consultaConfirmadaHorario ? elements.consultaConfirmadaHorario.textContent.replace('h', '-') : 'hora';
     const fileName = `consulta_${dataFormatada}_${horario}.png`;
     
     downloadLink.href = qrCodeImg.src;
@@ -777,34 +1629,80 @@ function downloadQRCode() { // Renomeada de 'baixarQRCode'
     showToast('QR Code baixado com sucesso!', "success");
 }
 
-// --- Event Listeners (Melhor prática para separar HTML e JS) ---
+// =============================================================================
+// NÃO POSSO COMPARECER - FUNCIONALIDADES
+// =============================================================================
+
+function mostrarPaginaNaoPosso(consulta) {
+    appState.consultaEmContexto = consulta;
+    mostrarPagina('pagina-nao-posso-comparecer');
+}
+
+function fecharNaoPosso() {
+    mostrarPagina('pagina-consultas');
+    if (elements.motivoNaoPosso) {
+        elements.motivoNaoPosso.value = '';
+    }
+    appState.consultaEmContexto = null;
+}
+
+function enviarNaoPosso() {
+    if (!appState.consultaEmContexto) {
+        showToast('Erro: Nenhuma consulta selecionada.');
+        return;
+    }
+    
+    const motivo = elements.motivoNaoPosso ? elements.motivoNaoPosso.value : '';
+    if (!motivo.trim()) {
+        showToast('Por favor, informe o motivo da sua ausência.', "error");
+        return;
+    }
+    
+    showSpinner();
+    setTimeout(() => {
+        hideSpinner();
+        if (appState.consultaEmContexto) {
+            executarCancelamentoFinal();
+            mostrarPagina('pagina-consultas');
+            if (elements.motivoNaoPosso) {
+                elements.motivoNaoPosso.value = '';
+            }
+            appState.consultaEmContexto = null;
+            showToast('Solicitação de cancelamento enviada.', "success");
+        } else {
+            showToast('Erro ao cancelar consulta.', "error");
+        }
+    }, 1500);
+}
+
+// =============================================================================
+// EVENT LISTENERS E INICIALIZAÇÃO
+// =============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DEBUG: DOMContentLoaded disparado!");
-    goToPage('pagina-principal'); // Inicia na página principal
+    mostrarPagina('pagina-principal');
 
     // Eventos do Header
     const profileElement = document.querySelector('.profile');
     if (profileElement) {
         profileElement.addEventListener('click', (event) => {
-            event.stopPropagation(); // Impede que o clique se propague para o window
+            event.stopPropagation();
             toggleDropdown();
         });
     }
 
-    // Adiciona evento de clique para os itens do menu
     if (elements.dropdownMenu) {
         elements.dropdownMenu.addEventListener('click', (event) => {
             const link = event.target.closest('a');
             if (link && link.dataset.page) {
-                event.preventDefault(); // Previne o comportamento padrão do link
-                goToPage(link.dataset.page);
-                toggleDropdown(); // Fecha o menu após o clique
+                event.preventDefault();
+                mostrarPagina(link.dataset.page);
+                toggleDropdown();
             }
         });
     }
 
-    // Fecha o dropdown se clicar fora dele
     window.addEventListener('click', (event) => {
         if (elements.dropdownMenu && elements.dropdownMenu.classList.contains('show')) {
             if (!profileElement.contains(event.target)) {
@@ -815,92 +1713,87 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Eventos da página "Minha Conta"
     const editButton = document.querySelector('#sub-aba-meus-dados .form-group-actions .action-button.secondary');
-    if (editButton) editButton.addEventListener('click', enableEditMode);
+    if (editButton) editButton.addEventListener('click', habilitarEdicao);
     
     const saveAccountButton = document.querySelector('#sub-aba-meus-dados .action-buttons .action-button.primary');
-    if (saveAccountButton) saveAccountButton.addEventListener('click', saveAccountData);
+    if (saveAccountButton) saveAccountButton.addEventListener('click', salvarDados);
     
     const saveNotifButton = document.querySelector('#sub-aba-notificacoes .action-button.primary');
-    if (saveNotifButton) saveNotifButton.addEventListener('click', saveNotificationPreferences);
+    if (saveNotifButton) saveNotifButton.addEventListener('click', salvarNotificacoes);
     
     const changePassButton = document.querySelector('#sub-aba-mudar-senha .action-button.primary');
-    if (changePassButton) changePassButton.addEventListener('click', changePassword);
-    
+    if (changePassButton) changePassButton.addEventListener('click', mudarSenha);
+
     // Eventos da página "Horários de Triagem"
-    elements.selectDiaSemana.addEventListener('change', updateAvailableTimes);
-    elements.selectPeriodo.addEventListener('change', updateAvailableTimes);
-    elements.confirmSelectionButton.addEventListener('click', validateAndOpenTriagemModal);
+    if (elements.confirmSelectionButton) {
+        elements.confirmSelectionButton.addEventListener('click', validarEabrirModalTriagem);
+    }
+
+    // Eventos da página "Mudar Horário"
+    if (elements.mudarConfirmSelectionButton) {
+        elements.mudarConfirmSelectionButton.addEventListener('click', salvarPreferenciasHorario);
+    }
 
     // Eventos dos Modais
-    document.querySelector('#modal-detalhes-consulta .modal-action-buttons .action-button.secondary').addEventListener('click', () => closeModal(elements.modalDetalhesConsulta));
-    document.querySelector('#modal-triagem .modal-action-buttons .action-button.secondary').addEventListener('click', () => closeModal(elements.modalTriagem));
-    document.querySelector('#modal-triagem .modal-action-buttons .action-button.primary').addEventListener('click', confirmTriagemRequest);
-    document.querySelector('#modal-confirmar-cancelamento .modal-action-buttons .action-button.secondary').addEventListener('click', () => closeModal(elements.modalConfirmarCancelamento));
+    document.querySelector('#modal-detalhes-consulta .modal-action-buttons .action-button.secondary')?.addEventListener('click', fecharModalDetalhes);
+    document.querySelector('#modal-triagem .modal-action-buttons .action-button.secondary')?.addEventListener('click', () => closeModal(elements.modalTriagem));
+    document.querySelector('#modal-triagem .modal-action-buttons .action-button.primary')?.addEventListener('click', enviarSolicitacaoTriagem);
+    document.querySelector('#modal-confirmar-cancelamento .modal-action-buttons .action-button.secondary')?.addEventListener('click', fecharModalConfirmarCancelamento);
     
     if (elements.btnConfirmarCancelamentoFinal) {
         console.log("[DOMContentLoaded] Botão #btn-confirmar-cancelamento-final ENCONTRADO. Adicionando listener.");
-        elements.btnConfirmarCancelamentoFinal.addEventListener('click', () => {
-            console.log("[DOMContentLoaded] Botão #btn-confirmar-cancelamento-final CLICADO. Chamando cancelAppointment().");
-            cancelAppointment();
-        });
+        elements.btnConfirmarCancelamentoFinal.addEventListener('click', executarCancelamentoFinal);
     } else {
         console.error("[DOMContentLoaded] ERRO: Botão #btn-confirmar-cancelamento-final NÃO encontrado no DOM.");
     }
+
     // Eventos da Página "Consulta Confirmada"
-    document.querySelector('.consulta-confirmada-download').addEventListener('click', downloadQRCode);
-    document.querySelector('.consulta-confirmada-voltar').addEventListener('click', () => goToPage('pagina-consultas'));
+    document.querySelector('.consulta-confirmada-download')?.addEventListener('click', baixarQRCode);
+    document.querySelector('.consulta-confirmada-voltar')?.addEventListener('click', () => mostrarPagina('pagina-consultas'));
 
     // Eventos da Página "Não Posso Comparecer"
-    document.querySelector('#pagina-nao-posso-comparecer .action-button.secondary').addEventListener('click', closeCannotAttendPage);
-    document.querySelector('#pagina-nao-posso-comparecer .action-button.primary').addEventListener('click', sendCannotAttendReasonAndCancel);
+    document.querySelector('#pagina-nao-posso-comparecer .action-button.secondary')?.addEventListener('click', fecharNaoPosso);
+    document.querySelector('#pagina-nao-posso-comparecer .action-button.primary')?.addEventListener('click', enviarNaoPosso);
 });
 
-// --- Definição ÚNICA de closeModal ---
-function closeModal(modalElement) {
-    console.log("[closeModal] Fechando modal:", modalElement ? modalElement.id : 'Elemento Nulo');
-    if (modalElement) {
-        modalElement.classList.remove('active');
-    }
-    // Só remove modal-active do body se nenhum outro modal estiver aberto
-    if (!document.querySelector('.modal-overlay.active')) {
-        document.body.classList.remove('modal-active');
-    }
-    console.log("[closeModal] Limpando appState.consultaEmContexto.");
-    appState.consultaEmContexto = null; // Limpa o contexto da consulta ao fechar modais
-}
+// =============================================================================
+// MAPEAMENTO PARA FUNÇÕES GLOBAIS (compatibilidade com onclick no HTML)
+// =============================================================================
 
-// --- Mapeamento para funções globais (para compatibilidade com `onclick` no HTML) ---
-// Mantenha estes se seu HTML ainda usa `onclick="funcao()"`.
-// Em um projeto novo, você removeria todos os onclicks e usaria apenas addEventListener.
-// Remove as funções globais que não são mais necessárias para o menu
-window.mostrarPagina = goToPage;
-window.mostrarSubAba = showSubTab;
+window.mostrarPagina = mostrarPagina;
+window.mostrarSubAba = mostrarSubAba;
 
-// --- Funções da Página "Minha Conta" ---
-window.habilitarEdicao = enableEditMode;
-window.salvarDados = saveAccountData;
-window.salvarNotificacoes = saveNotificationPreferences;
-window.mudarSenha = changePassword;
+// Página "Minha Conta"
+window.habilitarEdicao = habilitarEdicao;
+window.salvarDados = salvarDados;
+window.salvarNotificacoes = salvarNotificacoes;
+window.mudarSenha = mudarSenha;
 
-// --- Funções da Página "Horários de Triagem" ---
-window.atualizarHorariosDisponiveis = updateAvailableTimes;
-window.validarEabrirModalTriagem = validateAndOpenTriagemModal;
-window.enviarSolicitacaoTriagem = confirmTriagemRequest; // Mapeando o nome antigo para o novo, se o HTML ainda usar
-
-// --- Funções da Página "Minhas Consultas" ---
-window.atualizarListaConsultas = atualizarListaConsultas; // Caso seja chamada diretamente
-window.mostrarDetalhesConsulta = viewAppointmentDetails; // Detalhes da consulta
-window.mostrarPaginaNaoPosso = showCannotAttendPage; // Abre a página "Não posso comparecer"
-window.enviarNaoPosso = sendCannotAttendReasonAndCancel; // Envia o motivo e cancela
-window.fecharNaoPosso = closeCannotAttendPage; // Fecha a página "Não posso comparecer"
-
-window.fecharModalDetalhes = () => closeModal(elements.modalDetalhesConsulta);
-window.cancelarConsulta = () => openCancelAppointmentModal(appState.consultaEmContexto); // Abre o modal de cancelamento a partir dos detalhes
-window.abrirModalConfirmarCancelamento = openCancelAppointmentModal; // Para botões diretos
-window.fecharModalConfirmarCancelamento = () => closeModal(elements.modalConfirmarCancelamento); // Já existe no addEventListener
-window.executarCancelamentoFinal = cancelAppointment; // Ação final de cancelamento
-
+// Página "Horários de Triagem"
+window.validarEabrirModalTriagem = validarEabrirModalTriagem;
+window.enviarSolicitacaoTriagem = enviarSolicitacaoTriagem;
 window.fecharModalTriagem = () => closeModal(elements.modalTriagem);
 
-window.gerarQRCode = generateQRCode; // Mantido se houver chamadas diretas
-window.baixarQRCode = downloadQRCode; // Mantido se houver chamadas diretas
+// Página "Mudar Horário"
+window.salvarPreferenciasHorario = salvarPreferenciasHorario;
+window.limparPreferenciasHorario = limparPreferenciasHorario;
+
+// Página "Minhas Consultas"
+window.atualizarListaConsultas = atualizarListaConsultas;
+window.mostrarDetalhesConsulta = mostrarDetalhesConsulta;
+window.fecharModalDetalhes = fecharModalDetalhes;
+window.cancelarConsulta = () => abrirModalConfirmarCancelamento(appState.consultaEmContexto);
+window.abrirModalConfirmarCancelamento = abrirModalConfirmarCancelamento;
+window.fecharModalConfirmarCancelamento = fecharModalConfirmarCancelamento;
+window.executarCancelamentoFinal = executarCancelamentoFinal;
+
+// Página "Consulta Confirmada"
+window.gerarQRCode = gerarQRCode;
+window.baixarQRCode = baixarQRCode;
+
+// Página "Não Posso Comparecer"
+window.mostrarPaginaNaoPosso = mostrarPaginaNaoPosso;
+window.enviarNaoPosso = enviarNaoPosso;
+window.fecharNaoPosso = fecharNaoPosso;
+
+console.log("DEBUG: aba_paciente.js completamente carregado e inicializado");

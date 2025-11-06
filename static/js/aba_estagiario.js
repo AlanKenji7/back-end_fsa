@@ -73,6 +73,7 @@ async function carregarConsultas() {
     }
 }
 
+// Função corrigida para confirmar triagem
 async function confirmarTriagemAPI(solicitacaoId, dataAgendamento, observacoes) {
     try {
         const response = await fetch(`/api/estagiario/agendamentos/confirmar/${solicitacaoId}`, {
@@ -92,20 +93,134 @@ async function confirmarTriagemAPI(solicitacaoId, dataAgendamento, observacoes) 
             throw new Error(data.error || 'Erro ao confirmar triagem');
         }
 
-        mostrarToast('Triagem confirmada com sucesso!', 'success');
+        mostrarToast('Triagem confirmada com sucesso! A consulta agora aparece para o paciente.', 'success');
         await carregarSolicitacoes(); // Recarrega a lista de solicitações
         fecharModalConfirmacaoTriagem(); // Fecha o modal após a confirmação
+        
+        // Opcional: Recarregar também as consultas do estagiário
+        await carregarConsultas();
+        
     } catch (error) {
         console.error('Erro ao confirmar triagem:', error);
         mostrarToast(error.message || 'Erro ao confirmar triagem', 'error');
     }
 }
 
-async function salvarDisponibilidadeAPI(disponibilidade) {
-    const resultado = await fetchAPI('/disponibilidades', 'POST', disponibilidade);
+// Função melhorada para carregar consultas do estagiário
+async function carregarConsultas() {
+    try {
+        const response = await fetch('/api/estagiario/consultas');
+        const consultas = await response.json();
+        
+        if (response.ok && consultas) {
+            atualizarListaConsultas(consultas);
+        } else {
+            console.error('Erro ao carregar consultas:', consultas.error || 'Erro desconhecido');
+        }
+    } catch (error) {
+        console.error('Erro ao carregar consultas:', error);
+        mostrarToast('Erro ao carregar consultas', 'error');
+    }
+}
+
+// Função melhorada para atualizar a lista de consultas
+function atualizarListaConsultas(consultas) {
+    const consultasContainer = document.querySelector('.consultas-dia');
     
-    if (resultado) {
+    if (!consultasContainer) {
+        console.error('Container de consultas não encontrado');
+        return;
+    }
+    
+    if (!consultas || consultas.length === 0) {
+        consultasContainer.innerHTML = `
+            <h3>Consultas do dia</h3>
+            <div class="info-message">
+                <p>Nenhuma consulta agendada para hoje.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Filtrar consultas confirmadas
+    const consultasConfirmadas = consultas.filter(consulta => 
+        consulta.status === 'confirmado' || consulta.status === 'agendado'
+    );
+    
+    if (consultasConfirmadas.length === 0) {
+        consultasContainer.innerHTML = `
+            <h3>Consultas do dia</h3>
+            <div class="info-message">
+                <p>Nenhuma consulta confirmada para hoje.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <h3>Consultas Confirmadas</h3>
+        <div class="consultas-lista">
+    `;
+    
+    consultasConfirmadas.forEach(consulta => {
+        const dataFormatada = consulta.data_agendamento ? 
+            new Date(consulta.data_agendamento).toLocaleDateString('pt-BR') : 'Data a definir';
+        const horarioFormatado = consulta.data_agendamento ? 
+            new Date(consulta.data_agendamento).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Horário a definir';
+        
+        html += `
+            <div class="consulta-item status-confirmado">
+                <div class="consulta-header">
+                    <h4>Consulta com ${consulta.paciente_nome || 'Paciente'}</h4>
+                    <span class="status-badge status-confirmado">Confirmada</span>
+                </div>
+                <div class="consulta-details">
+                    <p><strong>Data:</strong> ${dataFormatada}</p>
+                    <p><strong>Horário:</strong> ${horarioFormatado}</p>
+                    <p><strong>Paciente:</strong> ${consulta.paciente_nome || 'N/A'}</p>
+                    <p><strong>Tipo:</strong> ${consulta.tipo_atendimento}</p>
+                    ${consulta.observacoes_estagiario ? `<p><strong>Observações:</strong> ${consulta.observacoes_estagiario}</p>` : ''}
+                </div>
+                <div class="consulta-actions">
+                    <button class="btn btn-primary" onclick="finalizarConsulta(${consulta.id})">
+                        Finalizar Consulta
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    consultasContainer.innerHTML = html;
+}
+
+async function salvarDisponibilidadeAPI(disponibilidade) {
+    try {
+        const response = await fetch('/api/disponibilidades', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(disponibilidade)
+        });
+        
+        const resultado = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(resultado.error || 'Erro ao salvar disponibilidade');
+        }
+        
+        mostrarToast(resultado.message || 'Disponibilidade salva com sucesso!', 'success');
         abrirModalSucessoDisponibilidade();
+        
+        // Limpar formulário após sucesso
+        document.querySelectorAll('input[name="dia"]').forEach(cb => cb.checked = false);
+        document.querySelectorAll('input[name="periodo"]').forEach(cb => cb.checked = false);
+        document.querySelector('.form-control').value = '';
+        
+    } catch (error) {
+        console.error('Erro ao salvar disponibilidade:', error);
+        mostrarToast(error.message || 'Erro ao salvar disponibilidade', 'error');
     }
 }
 
@@ -133,6 +248,11 @@ function mostrarPagina(paginaId) {
     // Carrega as consultas quando a página de minhas consultas é exibida
     if (paginaId === 'pagina-minhas-consultas') {
         carregarConsultas();
+    }
+    
+    // Carrega as disponibilidades quando a página de meus horários é exibida
+    if (paginaId === 'pagina-meus-horarios') {
+        carregarDisponibilidades();
     }
 }
 
@@ -172,29 +292,104 @@ function salvarDisponibilidade() {
     const periodos = Array.from(document.querySelectorAll('input[name="periodo"]:checked'))
         .map(checkbox => checkbox.value);
     
-    const horarioEspecifico = document.querySelector('.form-control').value;
+    const horarioEspecificoInput = document.querySelector('#pagina-meus-horarios .form-control');
+    const horarioEspecifico = horarioEspecificoInput ? horarioEspecificoInput.value.trim() : '';
     
     // Validar dados
     if (diasSemana.length === 0) {
-        mostrarToast('Selecione pelo menos um dia da semana');
+        mostrarToast('Selecione pelo menos um dia da semana', 'error');
         return;
     }
     
     if (periodos.length === 0) {
-        mostrarToast('Selecione pelo menos um período');
+        mostrarToast('Selecione pelo menos um período', 'error');
         return;
     }
     
     // Preparar dados para API
     const disponibilidade = {
-        estagiario_id: 1, // Simulação - em produção, usaria o ID do estagiário logado
         dias_semana: diasSemana,
         periodos: periodos,
-        horario_especifico: horarioEspecifico || null
+        horario_especifico: horarioEspecifico || ''
     };
     
     // Enviar para API
     salvarDisponibilidadeAPI(disponibilidade);
+}
+
+// Função para carregar disponibilidades salvas
+async function carregarDisponibilidades() {
+    try {
+        const response = await fetch('/api/disponibilidades');
+        const data = await response.json();
+        
+        if (response.ok && data.disponibilidades && data.disponibilidades.length > 0) {
+            // Agrupar por dia da semana para preencher os checkboxes
+            const diasComDisponibilidade = new Set();
+            
+            data.disponibilidades.forEach(d => {
+                if (d.data) {
+                    const dataObj = new Date(d.data);
+                    const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                    const diaNome = diasSemana[dataObj.getDay()];
+                    
+                    // Mapear para os nomes usados no HTML
+                    const mapa = {
+                        'Domingo': null,
+                        'Segunda': 'Segunda',
+                        'Terça': 'Terça',
+                        'Quarta': 'Quarta',
+                        'Quinta': 'Quinta',
+                        'Sexta': 'Sexta',
+                        'Sábado': 'Sábado'
+                    };
+                    
+                    if (mapa[diaNome]) {
+                        diasComDisponibilidade.add(mapa[diaNome]);
+                    }
+                }
+            });
+            
+            // Marcar checkboxes correspondentes
+            diasComDisponibilidade.forEach(dia => {
+                const checkbox = document.querySelector(`input[name="dia"][value="${dia}"]`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                }
+            });
+            
+            // Detectar períodos baseado nos horários
+            const periodos = new Set();
+            data.disponibilidades.forEach(d => {
+                const horaInicio = d.hora_inicio;
+                if (horaInicio) {
+                    const hora = parseInt(horaInicio.split(':')[0]);
+                    if (hora >= 8 && hora < 12) {
+                        periodos.add('Manhã');
+                    } else if (hora >= 14 && hora < 19) {
+                        periodos.add('Tarde');
+                    } else if (hora >= 19) {
+                        periodos.add('Noite');
+                    }
+                }
+            });
+            
+            periodos.forEach(periodo => {
+                const checkbox = document.querySelector(`input[name="periodo"][value="${periodo}"]`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                }
+            });
+            
+            // Mostrar mensagem informativa
+            const infoMessage = document.querySelector('#pagina-meus-horarios .info-message');
+            if (infoMessage && data.disponibilidades.length > 0) {
+                infoMessage.innerHTML = `<p>Você possui ${data.disponibilidades.length} horários disponíveis cadastrados. Para atualizar, modifique e salve novamente.</p>`;
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao carregar disponibilidades:', error);
+    }
 }
 
 // Funções do calendário
@@ -327,8 +522,27 @@ async function finalizarConsulta(consultaId) {
 
             if (response.ok) {
                 mostrarToast('Consulta finalizada com sucesso!', 'success');
-                // Recarrega a lista de consultas
-                await carregarConsultas();
+
+                // Propaga o ID da consulta concluída para o modal de prontuário e abre-o imediatamente
+                try {
+                    // Tenta definir uma variável global de fallback, caso exista script que a utilize
+                    window.consultaAtual = data.consulta_id || consultaId;
+                } catch (e) {
+                    // ignore
+                }
+
+                const hiddenInput = document.getElementById('prontuario-consulta-id');
+                if (hiddenInput) {
+                    hiddenInput.value = (data && data.consulta_id) ? data.consulta_id : consultaId;
+                }
+
+                const prontuarioModal = document.getElementById('modal-prontuario');
+                if (prontuarioModal) {
+                    prontuarioModal.classList.add('show');
+                }
+
+                // Opcionalmente, atualiza a lista de consultas em background
+                try { await carregarConsultas(); } catch (e) {}
             } else {
                 throw new Error(data.error || 'Erro ao finalizar consulta');
             }
@@ -412,12 +626,16 @@ function fecharModalConfirmacaoTriagem() {
 
 function abrirModalSucessoDisponibilidade() {
     const modal = document.getElementById('modal-sucesso-disponibilidade');
-    modal.classList.add('active');
+    if (modal) {
+        modal.classList.add('show');
+    }
 }
 
 function fecharModalSucessoDisponibilidade() {
     const modal = document.getElementById('modal-sucesso-disponibilidade');
-    modal.classList.remove('active');
+    if (modal) {
+        modal.classList.remove('show');
+    }
 }
 
 // Funções de toast

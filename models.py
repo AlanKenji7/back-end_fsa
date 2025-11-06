@@ -5,16 +5,15 @@ import datetime # Importar datetime para tipos de data
 class Paciente(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(100), nullable=False)
-    data_nascimento = db.Column(db.Date, nullable=False) # Use db.Date para datas
+    data_nascimento = db.Column(db.Date, nullable=False)
     genero = db.Column(db.String(20), nullable=False)
-    cpf = db.Column(db.String(14), unique=True, nullable=False)
-    telefone = db.Column(db.String(20), nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
+    cpf = db.Column(db.String(14), unique=True, nullable=False)  # Único
+    telefone = db.Column(db.String(20), unique=True, nullable=False)  # Único
+    email = db.Column(db.String(100), unique=True, nullable=False)  # Único entre todos
     endereco = db.Column(db.String(200), nullable=False)
     numero_casa = db.Column(db.String(10), nullable=False)
-    senha = db.Column(db.String(200), nullable=False) # Armazena hashes de senhas, não senhas em texto puro!
-    agendamentos = db.relationship('Agendamento', backref='paciente', lazy=True) # Relacionamento com Agendamento
-
+    senha = db.Column(db.String(200), nullable=False)
+    agendamentos = db.relationship('Agendamento', backref='paciente', lazy=True)
     def __repr__(self):
         return f"Paciente ('{self.nome}')"
 
@@ -22,14 +21,13 @@ class Estagiario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(100), nullable=False)
     data_nascimento = db.Column(db.Date, nullable=False)
-    RA = db.Column(db.String(10), unique=True, nullable=False) # RA geralmente é string
-    cpf = db.Column(db.String(14), unique=True, nullable=False)
-    # AQUI ESTÁ A CHAVE! Certifique-se de que esta linha existe e o nome é "telefone"
-    telefone_aluno = db.Column(db.String(20), nullable=False)
-    emailfsa = db.Column(db.String(100), unique=True, nullable=False)
+    RA = db.Column(db.String(10), unique=True, nullable=False)  # Único
+    cpf = db.Column(db.String(14), unique=True, nullable=False)  # Único
+    telefone_aluno = db.Column(db.String(20), unique=True, nullable=False)  # Único
+    emailfsa = db.Column(db.String(100), unique=True, nullable=False)  # Único entre todos
     curso_periodo = db.Column(db.String(50), nullable=False)
-    senha = db.Column(db.String(200), nullable=False) # Armazenar a senha hash
-    agendamentos = db.relationship('Agendamento', backref='estagiario', lazy=True) # Relacionamento com Agendamento
+    senha = db.Column(db.String(200), nullable=False)
+    agendamentos = db.relationship('Agendamento', backref='estagiario', lazy=True)
     disponibilidades = db.relationship('Disponibilidade', backref='estagiario', lazy=True)
 
     def __repr__(self):
@@ -57,3 +55,63 @@ class Disponibilidade(db.Model):
 
     def __repr__(self):
         return f"<Disponibilidade id={self.id} estagiario_id={self.estagiario_id} data='{self.data}' horario='{self.hora_inicio}-{self.hora_fim}'>"
+
+class Mestre(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(100), nullable=False)
+    cpf = db.Column(db.String(14), unique=True, nullable=False)  # Único
+    telefone = db.Column(db.String(20), unique=True, nullable=False)  # Único
+    email = db.Column(db.String(100), unique=True, nullable=False)  # Único entre todos
+    registro_profissional = db.Column(db.String(50), unique=True, nullable=False)  # Único
+    senha = db.Column(db.String(200), nullable=False)
+    
+    def __repr__(self):
+        return f"Mestre ('{self.nome}', CPF: '{self.cpf}')"
+
+class Notificacao(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(150), nullable=False)
+    mensagem = db.Column(db.Text, nullable=False)
+    data_criacao = db.Column(db.DateTime, default=datetime.datetime.now, nullable=False)
+    # Permite enviar para todos os estagiários (destinatario_id nulo) ou para 1 específico
+    destinatario_id = db.Column(db.Integer, db.ForeignKey('estagiario.id'), nullable=True)
+    enviado_por = db.Column(db.String(100), nullable=False)  # Nome do admin
+
+    def __repr__(self):
+        return f"Notificacao('{self.titulo}', Destinatario: '{self.destinatario_id}')"
+
+# Novo modelo de Prontuário, para armazenar dados detalhados das consultas concluídas
+class Prontuario(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    agendamento_id = db.Column(db.Integer, db.ForeignKey('agendamento.id'), nullable=False)
+    estagiario_id = db.Column(db.Integer, db.ForeignKey('estagiario.id'), nullable=False)
+    paciente_id = db.Column(db.Integer, db.ForeignKey('paciente.id'), nullable=False)
+
+    tipo_triagem = db.Column(db.String(50), nullable=True)
+    sala_atendimento = db.Column(db.String(50), nullable=True)
+
+    queixa_principal = db.Column(db.Text, nullable=False)
+    historico_paciente = db.Column(db.Text, nullable=False)
+    avaliacao_inicial = db.Column(db.Text, nullable=False)
+
+    tipo_encaminhamento = db.Column(db.String(50), nullable=True)
+    encaminhamento_descricao = db.Column(db.Text, nullable=True)
+
+    status = db.Column(db.String(20), default='pendente', nullable=False)  # pendente, aprovado, reajustes
+    data_criacao = db.Column(db.DateTime, default=datetime.datetime.now, nullable=False)
+    ultima_atualizacao = db.Column(db.DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+    def __repr__(self):
+        return f"<Prontuario id={self.id} agendamento_id={self.agendamento_id} status='{self.status}'>"
+
+class ComunicadoPaciente(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(150), nullable=False)
+    mensagem = db.Column(db.Text, nullable=False)
+    data_criacao = db.Column(db.DateTime, default=datetime.datetime.now, nullable=False)
+    # Permite enviar para todos os pacientes (paciente_id nulo) ou para 1 específico
+    paciente_id = db.Column(db.Integer, db.ForeignKey('paciente.id'), nullable=True)
+    enviado_por = db.Column(db.String(100), nullable=False)  # Nome do admin
+
+    def __repr__(self):
+        return f"ComunicadoPaciente('{self.titulo}', Paciente: '{self.paciente_id}')"

@@ -1,13 +1,13 @@
 # views.py
 from main import app, mail # Importa o aplicativo Flask principal e o objeto mail
 from db import db
-from models import Paciente,Estagiario,Agendamento
-from flask import render_template, request, redirect, url_for, flash, session,jsonify
+from models import Paciente, Estagiario, Agendamento, Mestre, Notificacao, Prontuario, Disponibilidade, ComunicadoPaciente
+from flask import render_template, request, redirect, url_for, flash, session, jsonify, get_flashed_messages
 import datetime # Adicionado para conversão de data
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_migrate import Migrate 
 from flask import request, jsonify, session
-from email_utils import enviar_email_confirmacao_consulta
+from email_utils import enviar_email_confirmacao_consulta, gerar_token_redefinicao, validar_token_redefinicao, marcar_token_como_usado, enviar_email_redefinicao_senha, verificar_email_existe
 
 
 
@@ -23,64 +23,78 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        print("DEBUG: Requisição POST para /login recebida.") # DEBUG
+        print("DEBUG: Requisição POST para /login recebida.")
         identificador = request.form.get('identificador')
         senha_digitada = request.form.get('password')
 
-        print(f"DEBUG: Identificador recebido: {identificador}") # DEBUG
+        print(f"DEBUG: Identificador recebido: {identificador}")
 
-        # Verificação para Paciente (usa email)
+        # PRIMEIRO: Verificação para Mestre (usa email)
+        mestre = Mestre.query.filter_by(email=identificador).first()
+        if mestre:
+            print(f"DEBUG: Mestre encontrado: {mestre.email}")
+            if check_password_hash(mestre.senha, senha_digitada):
+                print("DEBUG: Senha do mestre CORRETA.")
+                session['logged_in'] = True
+                session['user_id'] = mestre.id
+                session['user_type'] = 'mestre'
+                session['nome_usuario'] = mestre.nome
+                flash('Login de mestre realizado com sucesso!', 'success')
+                print("DEBUG: Redirecionando para aba_admin...")
+                return redirect(url_for('aba_admin'))
+            else:
+                print("DEBUG: Senha do mestre INCORRETA.")
+                flash('Senha incorreta. Por favor, tente novamente.', 'error')
+                return render_template('login.html')
+
+        # SEGUNDO: Verificação para Paciente (usa email)
         paciente = Paciente.query.filter_by(email=identificador).first()
         if paciente:
-            print(f"DEBUG: Paciente encontrado: {paciente.email}") # DEBUG
+            print(f"DEBUG: Paciente encontrado: {paciente.email}")
             if check_password_hash(paciente.senha, senha_digitada):
-                print("DEBUG: Senha do paciente CORRETA.") # DEBUG
+                print("DEBUG: Senha do paciente CORRETA.")
                 session['logged_in'] = True
                 session['user_id'] = paciente.id
                 session['user_type'] = 'paciente'
                 session['nome_usuario'] = paciente.nome
                 flash('Login de paciente realizado com sucesso!', 'success')
-                print("DEBUG: Redirecionando para aba_pacientes...") # DEBUG
+                print("DEBUG: Redirecionando para aba_pacientes...")
                 return redirect(url_for('aba_pacientes'))
             else:
-                print("DEBUG: Senha do paciente INCORRETA.") # DEBUG
+                print("DEBUG: Senha do paciente INCORRETA.")
                 flash('Senha incorreta. Por favor, tente novamente.', 'error')
                 return render_template('login.html')
         else:
-            print("DEBUG: Paciente não encontrado por email.") # DEBUG
+            print("DEBUG: Paciente não encontrado por email.")
         
-        # Verificação para Estagiário (usa email ou RA)
+        # TERCEIRO: Verificação para Estagiário (usa email ou RA)
         estagiario = Estagiario.query.filter_by(emailfsa=identificador).first()
         if not estagiario: 
             estagiario = Estagiario.query.filter_by(RA=identificador).first()
             if estagiario:
-                print(f"DEBUG: Estagiário encontrado por RA: {estagiario.RA}") # DEBUG
+                print(f"DEBUG: Estagiário encontrado por RA: {estagiario.RA}")
             else:
-                print("DEBUG: Estagiário NÃO encontrado por RA.") # DEBUG
+                print("DEBUG: Estagiário NÃO encontrado por RA.")
                 flash('E-mail/RA não encontrado. Por favor, verifique suas credenciais.', 'error')
                 return render_template('login.html')
         else:
-            print(f"DEBUG: Estagiário encontrado por emailfsa: {estagiario.emailfsa}") # DEBUG
+            print(f"DEBUG: Estagiário encontrado por emailfsa: {estagiario.emailfsa}")
 
         if estagiario and check_password_hash(estagiario.senha, senha_digitada):
-            print("DEBUG: Senha do estagiário CORRETA.") # DEBUG
+            print("DEBUG: Senha do estagiário CORRETA.")
             session['logged_in'] = True
             session['user_id'] = estagiario.id
             session['user_type'] = 'estagiario'
             session['nome_usuario'] = estagiario.nome
             flash('Login de estagiário realizado com sucesso!', 'success')
-            print("DEBUG: Redirecionando para aba_estagiario...") # DEBUG
+            print("DEBUG: Redirecionando para aba_estagiario...")
             return redirect(url_for('aba_estagiario'))
         else:
-            print("DEBUG: Senha do estagiário INCORRETA ou estagiário não encontrado.") # DEBUG
+            print("DEBUG: Senha do estagiário INCORRETA ou estagiário não encontrado.")
             flash('Senha incorreta. Por favor, tente novamente.', 'error')
             return render_template('login.html')
     
-    # Se o método for GET, apenas renderiza a página de login
-    messages = session.pop('_flashes', [])
-    print(f"DEBUG: Requisição GET para /login. Mensagens flash: {messages}") # DEBUG
-    return render_template('login.html', messages=messages)
-
+    return render_template('login.html')
 # Rota de Logout (opcional, mas recomendado)
 @app.route('/logout')
 def logout():
@@ -114,7 +128,7 @@ def termo_responsavel():
 @app.route('/cadastroPaciente', methods=['GET', 'POST'])
 def registrar_paciente():
     if request.method == 'POST':
-        print("DEBUG: Recebido POST para /cadastroPaciente") # DEBUG
+        print("DEBUG: Recebido POST para /cadastroPaciente")
         
         dados_paciente = {
             'nome': request.form['nomeForm'],
@@ -126,15 +140,18 @@ def registrar_paciente():
             'endereco': request.form['enderecoForm'],
             'numero_casa': request.form['numeroCasaForm']
         }
-        session['dados_paciente'] = dados_paciente
         
+        # Verificar duplicatas
+        tem_duplicata, mensagem = verificar_duplicatas('paciente', dados_paciente)
+        if tem_duplicata:
+            flash(mensagem, 'error')
+            return render_template("cadastroPaciente.html")
+        
+        session['dados_paciente'] = dados_paciente
         flash('Dados do paciente salvos temporariamente. Agora crie sua senha.', 'info')
-        print("DEBUG: Redirecionando para criar_senha") # DEBUG
         return redirect(url_for('criar_senha'))
     
-    messages = session.pop('_flashes', [])
-    return render_template("cadastroPaciente.html", messages=messages)
-
+    return render_template("cadastroPaciente.html")
     
 @app.route('/criarSenha', methods=['GET', 'POST'])
 def criar_senha():
@@ -310,9 +327,15 @@ def aba_pacientes():
         return redirect(url_for('login'))
 
     print(f"DEBUG: Renderizando aba_pacientes.html para o paciente: {paciente.nome}")  # DEBUG
+    
+    # Buscar comunicados para este paciente (gerais ou específicos)
+    comunicados = ComunicadoPaciente.query.filter(
+        (ComunicadoPaciente.paciente_id.is_(None)) | (ComunicadoPaciente.paciente_id == paciente_id)
+    ).order_by(ComunicadoPaciente.data_criacao.desc()).all()
+    
     messages = session.pop('_flashes', [])  # Para exibir mensagens flash se houver
-    # Passa o objeto 'paciente' para o template
-    return render_template("aba_pacientes.html", paciente=paciente, messages=messages)
+    # Passa o objeto 'paciente' e 'comunicados' para o template
+    return render_template("aba_pacientes.html", paciente=paciente, comunicados=comunicados, messages=messages)
 
 
 # Rota para o formulário de cadastro do aluno (primeira etapa)
@@ -329,15 +352,41 @@ def tela_cadastro_aluno():
             'RA': request.form['raForm'],
             'curso_periodo': request.form['cursoPeriodoForm']
         }
+        
+        # VERIFICAR DUPLICATAS AQUI
+        campos_duplicados = []
+        
+        # Verificar CPF
+        if Estagiario.query.filter(Estagiario.cpf.contains(dados_Estagiario['cpf'].replace('.', '').replace('-', ''))).first():
+            campos_duplicados.append('CPF')
+            flash('CPF já cadastrado no sistema', 'error')
+        
+        # Verificar Telefone
+        if Estagiario.query.filter(Estagiario.telefone_aluno.contains(''.join(filter(str.isdigit, dados_Estagiario['telefone_aluno'])))).first():
+            campos_duplicados.append('Telefone')
+            flash('Telefone já cadastrado no sistema', 'error')
+        
+        # Verificar Email
+        if Estagiario.query.filter_by(emailfsa=dados_Estagiario['emailfsa']).first():
+            campos_duplicados.append('E-mail')
+            flash('E-mail já cadastrado no sistema', 'error')
+        
+        # Verificar RA
+        if Estagiario.query.filter_by(RA=dados_Estagiario['RA']).first():
+            campos_duplicados.append('RA')
+            flash('RA já cadastrado no sistema', 'error')
+        
+        # Se houver duplicatas, não prosseguir
+        if campos_duplicados:
+            # Manter os dados no formulário
+            return render_template("cadastroaluno.html")
+        
+        # Se não houver duplicatas, continuar normalmente
         session['dados_Estagiario'] = dados_Estagiario
         flash('Dados do Estagiário salvos temporariamente. Agora crie sua senha.', 'info')
-        print("DEBUG: Redirecionando para criar_senha_aluno.") # Nome da rota corrigido
         return redirect(url_for('criar_senha_aluno'))
     
-    print("DEBUG: Acessando a rota /cadastroaluno (GET)")
-    messages = session.pop('_flashes', [])
-    return render_template("cadastroaluno.html", messages=messages)
-
+    return render_template("cadastroaluno.html")
 
 @app.route('/criarSenha_aluno', methods=['GET', 'POST'])
 def criar_senha_aluno():
@@ -440,8 +489,14 @@ def aba_estagiario():
         session.clear()
         return redirect(url_for('login'))
 
+    # Buscar notificações deste estagiário (ou para todos)
+    from models import Notificacao
+    notificacoes = Notificacao.query.filter(
+        (Notificacao.destinatario_id.is_(None)) | (Notificacao.destinatario_id == estagiario_id)
+    ).order_by(Notificacao.data_criacao.desc()).all()
+
     messages = session.pop('_flashes', [])
-    return render_template("aba_estagiario.html", estagiario=estagiario, messages=messages)
+    return render_template("aba_estagiario.html", estagiario=estagiario, messages=messages, notificacoes=notificacoes)
 
 
 
@@ -627,6 +682,359 @@ def gerenciar_disponibilidade():
     except Exception as e:
         print(f"Erro ao buscar disponibilidade: {e}")
         return jsonify({'error': f'Erro ao buscar disponibilidade: {str(e)}'}), 500
+
+@app.route('/api/disponibilidades', methods=['POST'])
+def criar_disponibilidades():
+    """Cria disponibilidades baseadas em dias da semana e períodos."""
+    if 'logged_in' not in session or session.get('user_type') != 'estagiario':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como estagiário.'}), 403
+
+    estagiario_id = session.get('user_id')
+    if not estagiario_id:
+        return jsonify({'error': 'ID do estagiário não encontrado na sessão.'}), 400
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Dados não fornecidos.'}), 400
+
+        print("=" * 60)
+        print("=== INÍCIO: Criando disponibilidades ===")
+        print(f"Dados recebidos: {data}")
+        
+        dias_semana_raw = data.get('dias_semana', [])
+        periodos = data.get('periodos', [])
+        horario_especifico = data.get('horario_especifico', '')
+
+        print(f"Dias recebidos (raw): {dias_semana_raw}")
+        print(f"Tipo de dias_semana_raw: {type(dias_semana_raw)}")
+        
+        # Garantir que é uma lista
+        if not isinstance(dias_semana_raw, list):
+            print(f"ERRO: dias_semana não é uma lista! Tipo: {type(dias_semana_raw)}")
+            return jsonify({'error': 'Formato de dados inválido.'}), 400
+        
+        dias_semana = [str(dia).strip() for dia in dias_semana_raw if dia]  # Limpar e converter para string
+
+        if not dias_semana or not periodos:
+            return jsonify({'error': 'Selecione pelo menos um dia da semana e um período.'}), 400
+
+        # Mapeamento de dias da semana para números (0=Segunda, 6=Domingo)
+        # IMPORTANTE: Este mapeamento define quais dias são válidos
+        dias_map = {
+            'Segunda': 0, 'Terça': 1, 'Quarta': 2, 'Quinta': 3,
+            'Sexta': 4, 'Sábado': 5, 'Domingo': 6
+        }
+
+        print(f"Dias após limpeza: {dias_semana}")
+
+        # Filtrar apenas dias válidos (remover qualquer dia que não esteja no mapeamento)
+        # Isso garante que apenas dias realmente selecionados sejam processados
+        dias_validos = []
+        for dia in dias_semana:
+            if dia in dias_map:
+                dias_validos.append(dia)
+                print(f"✓ Dia '{dia}' é válido")
+            else:
+                print(f"✗ Dia '{dia}' NÃO é válido e será ignorado")
+        
+        if len(dias_validos) != len(dias_semana):
+            dias_removidos = set(dias_semana) - set(dias_validos)
+            print(f"AVISO: Removendo dias inválidos ou não selecionados: {dias_removidos}")
+        
+        dias_semana = dias_validos
+        
+        if not dias_semana:
+            print("ERRO: Nenhum dia válido após filtragem!")
+            return jsonify({'error': 'Nenhum dia válido selecionado.'}), 400
+        
+        # Log para depuração
+        print(f"=== DADOS FINAIS ===")
+        print(f"Estagiário ID: {estagiario_id}")
+        print(f"Dias selecionados e válidos: {dias_semana}")
+        print(f"Períodos selecionados: {periodos}")
+        print(f"Horário específico: {horario_especifico or 'Nenhum'}")
+
+        # Remover TODAS as disponibilidades antigas do estagiário ANTES de criar novas
+        # Isso garante que não fiquem disponibilidades de dias não selecionados
+        print(f"\n=== REMOVENDO DISPONIBILIDADES ANTIGAS ===")
+        
+        # Primeiro, verificar quantas existem
+        disponibilidades_antigas = Disponibilidade.query.filter_by(estagiario_id=estagiario_id).all()
+        print(f"Disponibilidades encontradas antes do delete: {len(disponibilidades_antigas)}")
+        for disp in disponibilidades_antigas:
+            print(f"  - ID {disp.id}: {disp.data} ({disp.data.strftime('%A') if disp.data else 'N/A'}) - {disp.hora_inicio} até {disp.hora_fim}")
+        
+        # Deletar todas
+        num_deletadas = Disponibilidade.query.filter_by(estagiario_id=estagiario_id).delete()
+        db.session.flush()  # Garantir que o delete seja executado antes de adicionar novos registros
+        print(f"Deletadas {num_deletadas} disponibilidades antigas do estagiário {estagiario_id}")
+        
+        # Verificar novamente após o flush
+        disponibilidades_restantes = Disponibilidade.query.filter_by(estagiario_id=estagiario_id).count()
+        if disponibilidades_restantes > 0:
+            print(f"⚠ AVISO: Ainda existem {disponibilidades_restantes} disponibilidades após delete. Forçando remoção...")
+            # Tentar deletar novamente com commit
+            Disponibilidade.query.filter_by(estagiario_id=estagiario_id).delete()
+            db.session.flush()
+            db.session.commit()  # Commit forçado para garantir remoção
+            db.session.begin()  # Reiniciar transação
+            
+            # Verificar uma última vez
+            disponibilidades_restantes_final = Disponibilidade.query.filter_by(estagiario_id=estagiario_id).count()
+            if disponibilidades_restantes_final > 0:
+                print(f"❌ ERRO CRÍTICO: Ainda existem {disponibilidades_restantes_final} disponibilidades após múltiplas tentativas de delete!")
+                # Deletar uma por uma como último recurso
+                disponibilidades_individuais = Disponibilidade.query.filter_by(estagiario_id=estagiario_id).all()
+                for disp in disponibilidades_individuais:
+                    print(f"  Deletando manualmente ID {disp.id}")
+                    db.session.delete(disp)
+                db.session.flush()
+            else:
+                print(f"✓ Todas as disponibilidades antigas foram removidas com sucesso!")
+
+        # Mapeamento de períodos para horários
+        periodos_map = {
+            'Manhã': {'inicio': '08:00', 'fim': '12:00'},
+            'Tarde': {'inicio': '14:00', 'fim': '18:00'},
+            'Noite': {'inicio': '19:00', 'fim': '22:00'}
+        }
+
+        # Se houver horário específico, usar ele para todos os dias/períodos
+        if horario_especifico:
+            # Tentar extrair horários do texto (ex: "14:00 às 16:00")
+            import re
+            horas = re.findall(r'(\d{1,2}):(\d{2})', horario_especifico)
+            if len(horas) >= 2:
+                hora_inicio = f"{horas[0][0]}:{horas[0][1]}"
+                hora_fim = f"{horas[1][0]}:{horas[1][1]}"
+            else:
+                # Default se não conseguir extrair
+                hora_inicio = '14:00'
+                hora_fim = '18:00'
+        else:
+            hora_inicio = None
+            hora_fim = None
+
+        # Criar disponibilidades para as próximas 4 semanas
+        hoje = datetime.date.today()
+        hoje_weekday = hoje.weekday()  # 0=Segunda, 6=Domingo
+        disponibilidades_criadas = []
+
+        print(f"\nHoje: {hoje} (dia da semana: {hoje_weekday} = {list(dias_map.keys())[hoje_weekday] if hoje_weekday < 7 else 'Inválido'})")
+        print(f"Iniciando criação de disponibilidades para {len(dias_semana)} dia(s)...\n")
+
+        for semana_offset in range(4):
+            for dia_nome in dias_semana:
+                # VALIDAÇÃO CRÍTICA: Verificar se o dia está no mapeamento e foi realmente selecionado
+                # IMPORTANTE: só processar dias que estão na lista dias_semana enviada pelo frontend
+                if dia_nome not in dias_map:
+                    print(f"ERRO CRÍTICO: Dia '{dia_nome}' não está no mapeamento! PULANDO...")
+                    continue  # Pular se o dia não estiver no mapeamento
+                
+                dia_num = dias_map[dia_nome]
+                print(f"\nProcessando: {dia_nome} (número: {dia_num}) - Semana {semana_offset + 1}")
+
+                # Calcular a data do dia da semana na semana atual + offset
+                # weekday() retorna: 0=Segunda, 1=Terça, ..., 6=Domingo
+                # Se hoje é segunda (0) e queremos quarta (2): (2-0)%7 = 2 (2 dias à frente)
+                # Se hoje é sexta (4) e queremos segunda (0): (0-4)%7 = 3 (3 dias à frente, próxima segunda)
+                dias_ate_dia = (dia_num - hoje_weekday) % 7
+                
+                print(f"  Dias até {dia_nome}: {dias_ate_dia}")
+                
+                # Se é a primeira semana (semana_offset == 0) e o dia calculado é hoje (dias_ate_dia == 0),
+                # pular para a próxima semana para não criar disponibilidade para hoje
+                if dias_ate_dia == 0 and semana_offset == 0:
+                    print(f"  ⚠ Hoje é {dia_nome}, pulando para próxima semana")
+                    dias_ate_dia = 7
+                
+                # Calcular data final
+                dias_totais = (semana_offset * 7) + dias_ate_dia
+                data_disponibilidade = hoje + datetime.timedelta(days=dias_totais)
+                
+                print(f"  Data calculada: {data_disponibilidade} ({data_disponibilidade.strftime('%A')})")
+                
+                # Verificação de segurança: garantir que nunca criamos disponibilidade para hoje ou passado
+                if data_disponibilidade <= hoje:
+                    print(f"  ⚠ Data {data_disponibilidade} é hoje ou passado! Adicionando 7 dias...")
+                    data_disponibilidade = data_disponibilidade + datetime.timedelta(days=7)
+                    print(f"  Nova data: {data_disponibilidade}")
+                
+                # Verificar se a data calculada corresponde ao dia da semana correto
+                data_weekday = data_disponibilidade.weekday()
+                if data_weekday != dia_num:
+                    print(f"  ⚠ ERRO: Data {data_disponibilidade} é {list(dias_map.keys())[data_weekday]}, mas deveria ser {dia_nome}!")
+                    # Corrigir a data
+                    dias_correcao = (dia_num - data_weekday) % 7
+                    if dias_correcao == 0:
+                        dias_correcao = 7
+                    data_disponibilidade = data_disponibilidade + datetime.timedelta(days=dias_correcao)
+                    print(f"  Data corrigida: {data_disponibilidade}")
+
+                for periodo_nome in periodos:
+                    periodo_horarios = periodos_map.get(periodo_nome)
+                    if not periodo_horarios:
+                        continue
+
+                    # Usar horário específico se fornecido, senão usar o período
+                    inicio = hora_inicio if hora_inicio else periodo_horarios['inicio']
+                    fim = hora_fim if hora_fim else periodo_horarios['fim']
+
+                    # VALIDAÇÃO FINAL: Garantir que estamos criando apenas para os dias selecionados
+                    if dia_nome not in dias_semana:
+                        print(f"ERRO CRÍTICO: Tentando criar disponibilidade para '{dia_nome}' que não foi selecionado!")
+                        continue
+
+                    # VERIFICAÇÃO FINAL: Confirmar que a data corresponde ao dia correto
+                    data_final_weekday = data_disponibilidade.weekday()
+                    if data_final_weekday != dia_num:
+                        print(f"  ❌ ERRO CRÍTICO: Data {data_disponibilidade} é {list(dias_map.keys())[data_final_weekday]}, mas deveria ser {dia_nome}!")
+                        continue  # Pular esta disponibilidade se a data estiver errada
+
+                    disponibilidade = Disponibilidade(
+                        estagiario_id=estagiario_id,
+                        data=data_disponibilidade,
+                        hora_inicio=datetime.time.fromisoformat(inicio),
+                        hora_fim=datetime.time.fromisoformat(fim)
+                    )
+                    db.session.add(disponibilidade)
+                    disponibilidades_criadas.append({
+                        'data': data_disponibilidade.isoformat(),
+                        'dia': dia_nome,
+                        'periodo': periodo_nome,
+                        'horario': f"{inicio} - {fim}"
+                    })
+                    print(f"  ✓ Criada disponibilidade: {dia_nome} ({data_disponibilidade.strftime('%d/%m/%Y')}) - {inicio} até {fim}")
+
+        print(f"\n=== RESUMO FINAL ===")
+        print(f"Total de disponibilidades criadas: {len(disponibilidades_criadas)}")
+        for disp in disponibilidades_criadas:
+            print(f"  - {disp['dia']}: {disp['data']} - {disp['horario']}")
+        print("=" * 60 + "\n")
+
+        db.session.commit()
+
+        return jsonify({
+            'message': f'Disponibilidade salva com sucesso! {len(disponibilidades_criadas)} horários criados.',
+            'disponibilidades': disponibilidades_criadas
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao criar disponibilidades: {e}")
+        return jsonify({'error': f'Erro ao salvar disponibilidade: {str(e)}'}), 500
+
+@app.route('/api/disponibilidades', methods=['GET'])
+def listar_disponibilidades():
+    """Lista disponibilidades do estagiário logado."""
+    if 'logged_in' not in session or session.get('user_type') != 'estagiario':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como estagiário.'}), 403
+
+    estagiario_id = session.get('user_id')
+    if not estagiario_id:
+        return jsonify({'error': 'ID do estagiário não encontrado na sessão.'}), 400
+
+    try:
+        disponibilidades = Disponibilidade.query.filter_by(estagiario_id=estagiario_id).order_by(Disponibilidade.data, Disponibilidade.hora_inicio).all()
+        
+        lista = []
+        for d in disponibilidades:
+            lista.append({
+                'id': d.id,
+                'data': d.data.isoformat() if d.data else None,
+                'hora_inicio': str(d.hora_inicio) if d.hora_inicio else None,
+                'hora_fim': str(d.hora_fim) if d.hora_fim else None,
+                'dia_semana': d.data.strftime('%A') if d.data else None
+            })
+
+        return jsonify({'disponibilidades': lista}), 200
+
+    except Exception as e:
+        print(f"Erro ao listar disponibilidades: {e}")
+        return jsonify({'error': f'Erro ao listar disponibilidades: {str(e)}'}), 500
+
+@app.route('/api/admin/disponibilidades/<int:estagiario_id>', methods=['GET'])
+def admin_ver_disponibilidades(estagiario_id):
+    """Permite que administradores visualizem disponibilidades de um estagiário."""
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Apenas administradores podem ver disponibilidades.'}), 403
+
+    try:
+        print(f"\n=== ADMIN: Buscando disponibilidades do estagiário {estagiario_id} ===")
+        disponibilidades = Disponibilidade.query.filter_by(estagiario_id=estagiario_id).order_by(Disponibilidade.data, Disponibilidade.hora_inicio).all()
+        
+        print(f"Total de disponibilidades encontradas: {len(disponibilidades)}")
+        
+        lista = []
+        for d in disponibilidades:
+            dia_semana_num = d.data.weekday() if d.data else None
+            dias_semana_nomes = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+            dia_semana_nome = dias_semana_nomes[dia_semana_num] if dia_semana_num is not None else None
+            
+            item = {
+                'id': d.id,
+                'data': d.data.isoformat() if d.data else None,
+                'data_formatada': d.data.strftime('%d/%m/%Y') if d.data else None,
+                'hora_inicio': str(d.hora_inicio) if d.hora_inicio else None,
+                'hora_fim': str(d.hora_fim) if d.hora_fim else None,
+                'dia_semana': dia_semana_nome
+            }
+            lista.append(item)
+            print(f"  - {dia_semana_nome}: {d.data.strftime('%d/%m/%Y') if d.data else 'N/A'} - {d.hora_inicio} até {d.hora_fim}")
+
+        print(f"Retornando {len(lista)} disponibilidades\n")
+        return jsonify({'disponibilidades': lista}), 200
+
+    except Exception as e:
+        print(f"Erro ao listar disponibilidades do estagiário {estagiario_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Erro ao listar disponibilidades: {str(e)}'}), 500
+
+@app.route('/api/admin/agendamentos/<int:estagiario_id>', methods=['GET'])
+def admin_ver_agendamentos(estagiario_id):
+    """Permite que administradores visualizem agendamentos de um estagiário."""
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Apenas administradores podem ver agendamentos.'}), 403
+
+    try:
+        print(f"\n=== ADMIN: Buscando agendamentos do estagiário {estagiario_id} ===")
+        agendamentos = Agendamento.query.filter_by(estagiario_id=estagiario_id).order_by(Agendamento.data_agendamento.desc()).all()
+        
+        print(f"Total de agendamentos encontrados: {len(agendamentos)}")
+        
+        lista = []
+        hoje = datetime.datetime.now()
+        
+        for a in agendamentos:
+            paciente = Paciente.query.get(a.paciente_id) if a.paciente_id else None
+            
+            item = {
+                'id': a.id,
+                'paciente_id': a.paciente_id,
+                'paciente_nome': paciente.nome if paciente else 'Paciente não encontrado',
+                'data_solicitacao': a.data_solicitacao.isoformat() if a.data_solicitacao else None,
+                'data_solicitacao_formatada': a.data_solicitacao.strftime('%d/%m/%Y %H:%M') if a.data_solicitacao else None,
+                'data_agendamento': a.data_agendamento.isoformat() if a.data_agendamento else None,
+                'data_agendamento_formatada': a.data_agendamento.strftime('%d/%m/%Y - %H:%Mhr') if a.data_agendamento else None,
+                'status': a.status,
+                'observacoes_paciente': a.observacoes_paciente,
+                'observacoes_estagiario': a.observacoes_estagiario,
+                'is_futuro': a.data_agendamento > hoje if a.data_agendamento else False,
+                'is_concluido': a.status == 'concluido'
+            }
+            lista.append(item)
+            print(f"  - {item['paciente_nome']}: {item['data_agendamento_formatada']} - Status: {a.status}")
+
+        print(f"Retornando {len(lista)} agendamentos\n")
+        return jsonify({'agendamentos': lista}), 200
+
+    except Exception as e:
+        print(f"Erro ao listar agendamentos do estagiário {estagiario_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Erro ao listar agendamentos: {str(e)}'}), 500
 
 @app.route('/api/estagiario/solicitacoes', methods=['GET'])
 def listar_solicitacoes_estagiario():
@@ -896,6 +1304,72 @@ def listar_prontuarios():
         print(f"Erro ao listar prontuários: {e}")
         return jsonify({'error': f'Erro ao listar prontuários: {str(e)}'}), 500
 
+@app.route('/api/estagiario/prontuarios', methods=['POST'])
+def criar_prontuario():
+    if 'logged_in' not in session or session.get('user_type') != 'estagiario':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como estagiário.'}), 403
+
+    estagiario_id = session.get('user_id')
+    if not estagiario_id:
+        return jsonify({'error': 'ID do estagiário não encontrado na sessão.'}), 400
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        agendamento_id = data.get('consultaId') or data.get('agendamento_id')
+        if not agendamento_id:
+            return jsonify({'error': 'ID da consulta é obrigatório.'}), 400
+
+        agendamento = Agendamento.query.get(agendamento_id)
+        if not agendamento:
+            return jsonify({'error': 'Consulta não encontrada.'}), 404
+
+        # O estagiário só pode criar prontuário para suas próprias consultas
+        if agendamento.estagiario_id and agendamento.estagiario_id != estagiario_id:
+            return jsonify({'error': 'Esta consulta não pertence a você.'}), 403
+
+        if not agendamento.paciente_id:
+            return jsonify({'error': 'Consulta sem paciente associado.'}), 400
+
+        # Coleta de campos do prontuário
+        info = data.get('informacoesGerais') or {}
+        encaminhamentos = data.get('encaminhamentos') or {}
+
+        prontuario = Prontuario(
+            agendamento_id=agendamento.id,
+            estagiario_id=estagiario_id,
+            paciente_id=agendamento.paciente_id,
+            tipo_triagem=info.get('tipoTriagem'),
+            sala_atendimento=info.get('sala'),
+            queixa_principal=(data.get('queixaPrincipal') or '').strip(),
+            historico_paciente=(data.get('historicoPaciente') or '').strip(),
+            avaliacao_inicial=(data.get('avaliacaoInicial') or '').strip(),
+            tipo_encaminhamento=encaminhamentos.get('tipo'),
+            encaminhamento_descricao=encaminhamentos.get('descricao'),
+            status=(data.get('status') or 'pendente')
+        )
+
+        # Validação mínima
+        if not prontuario.queixa_principal or not prontuario.historico_paciente or not prontuario.avaliacao_inicial:
+            return jsonify({'error': 'Campos obrigatórios do prontuário não preenchidos.'}), 400
+
+        # Caso a consulta ainda não esteja atribuída, atribui ao estagiário atual
+        if not agendamento.estagiario_id:
+            agendamento.estagiario_id = estagiario_id
+
+        # Marcar como concluído quando criar prontuário
+        agendamento.status = 'concluido'
+
+        db.session.add(prontuario)
+        db.session.commit()
+
+        return jsonify({'message': 'Prontuário salvo com sucesso!', 'prontuario_id': prontuario.id}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao criar prontuário: {e}")
+        return jsonify({'error': f'Erro ao salvar prontuário: {str(e)}'}), 500
+
 @app.route('/api/estagiario/senha', methods=['PUT'])
 def alterar_senha_estagiario():
     if 'logged_in' not in session or session.get('user_type') != 'estagiario':
@@ -1115,3 +1589,1319 @@ def teste_email():
         return jsonify({
             'error': f'❌ Erro: {str(e)}'
         }), 500
+
+# =============================================================================
+# ROTAS DE REDEFINIÇÃO DE SENHA - CORRIGIDAS
+# =============================================================================
+
+@app.route('/esqueci-senha', methods=['POST'])
+def esqueci_senha():
+    try:
+        email = request.form.get('email')
+        
+        if not email:
+            return jsonify({'success': False, 'error': 'Email é obrigatório.'}), 400
+
+        print(f"DEBUG: Solicitando redefinição de senha para: {email}")
+
+        # Verificar se o email existe no sistema (paciente ou estagiário)
+        paciente = Paciente.query.filter_by(email=email).first()
+        estagiario = Estagiario.query.filter_by(emailfsa=email).first()
+        
+        if not paciente and not estagiario:
+            print(f"DEBUG: Email não encontrado: {email}")
+            return jsonify({'success': False, 'error': 'Email não cadastrado no sistema.'}), 404
+
+        print(f"DEBUG: Email encontrado - Paciente: {paciente is not None}, Estagiário: {estagiario is not None}")
+
+        # Gerar token de redefinição
+        token = gerar_token_redefinicao(email)
+        
+        if not token:
+            print("DEBUG: Erro ao gerar token")
+            return jsonify({'success': False, 'error': 'Erro ao gerar token de redefinição. Tente novamente.'}), 500
+
+        print(f"DEBUG: Token gerado com sucesso: {token}")
+
+        # Enviar email com link de redefinição
+        reset_url = url_for('login', token=token, _external=True)
+        print(f"DEBUG: URL de redefinição: {reset_url}")
+        
+        email_enviado = enviar_email_redefinicao_senha(email, reset_url)
+        
+        if email_enviado:
+            print("DEBUG: Email de redefinição enviado com sucesso")
+            return jsonify({
+                'success': True, 
+                'message': 'Email enviado com sucesso! Verifique sua caixa de entrada.'
+            })
+        else:
+            print("DEBUG: Falha ao enviar email")
+            return jsonify({
+                'success': False, 
+                'error': 'Erro ao enviar email. Tente novamente mais tarde.'
+            }), 500
+            
+    except Exception as e:
+        print(f"ERRO em esqueci-senha: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False, 
+            'error': 'Erro interno do servidor. Tente novamente.'
+        }), 500
+
+@app.route('/redefinir-senha', methods=['POST'])
+def redefinir_senha():
+    try:
+        token = request.form.get('token')
+        nova_senha = request.form.get('nova_senha')
+        confirmar_senha = request.form.get('confirmar_senha')
+        
+        print(f"DEBUG: Tentativa de redefinição - Token: {token}, Nova senha: {nova_senha is not None}")
+        
+        if not token or not nova_senha or not confirmar_senha:
+            return jsonify({
+                'success': False, 
+                'error': 'Todos os campos são obrigatórios.'
+            }), 400
+
+        # Validar token
+        email = validar_token_redefinicao(token)
+        
+        if not email:
+            print(f"DEBUG: Token inválido ou expirado: {token}")
+            return jsonify({
+                'success': False, 
+                'error': 'Link inválido ou expirado. Solicite um novo link.'
+            }), 400
+        
+        print(f"DEBUG: Token válido para email: {email}")
+        
+        if nova_senha != confirmar_senha:
+            return jsonify({
+                'success': False, 
+                'error': 'As senhas não coincidem.'
+            }), 400
+        
+        if len(nova_senha) < 8:
+            return jsonify({
+                'success': False, 
+                'error': 'A senha deve ter no mínimo 8 caracteres.'
+            }), 400
+        
+        # Buscar usuário no banco de dados
+        paciente = Paciente.query.filter_by(email=email).first()
+        estagiario = Estagiario.query.filter_by(emailfsa=email).first()
+        
+        if not paciente and not estagiario:
+            print(f"DEBUG: Usuário não encontrado para email: {email}")
+            return jsonify({
+                'success': False, 
+                'error': 'Usuário não encontrado.'
+            }), 404
+        
+        # Hash da nova senha
+        hashed_senha = generate_password_hash(nova_senha, method='pbkdf2:sha256')
+        
+        # Atualizar senha
+        if paciente:
+            paciente.senha = hashed_senha
+            print(f"DEBUG: Senha atualizada para paciente: {paciente.nome}")
+        elif estagiario:
+            estagiario.senha = hashed_senha
+            print(f"DEBUG: Senha atualizada para estagiário: {estagiario.nome}")
+        
+        # Marcar token como usado
+        marcar_token_como_usado(token)
+        
+        # Commit das alterações
+        db.session.commit()
+        
+        print("DEBUG: Senha redefinida com sucesso!")
+        return jsonify({
+            'success': True, 
+            'message': 'Senha redefinida com sucesso!'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERRO ao redefinir senha: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False, 
+            'error': 'Erro ao redefinir senha. Tente novamente.'
+        }), 500
+
+# =============================================================================
+# ROTA PARA VERIFICAÇÃO DE TOKEN (para o frontend)
+# =============================================================================
+
+@app.route('/api/verificar-token/<token>', methods=['GET'])
+def verificar_token(token):
+    """Verifica se um token de redefinição é válido"""
+    try:
+        email = validar_token_redefinicao(token)
+        if email:
+            return jsonify({'valid': True, 'email': email})
+        else:
+            return jsonify({'valid': False, 'error': 'Token inválido ou expirado'}), 400
+    except Exception as e:
+        print(f"Erro ao verificar token: {e}")
+        return jsonify({'valid': False, 'error': 'Erro ao verificar token'}), 500
+
+# =============================================================================
+# ROTAS DE HEALTH CHECK E ERROS
+# =============================================================================
+
+@app.route('/health')
+def health_check():
+    return jsonify({
+        'status': 'healthy', 
+        'timestamp': datetime.datetime.now().isoformat(),
+        'database': 'connected' if db.session.execute('SELECT 1').first() else 'disconnected'
+    })
+
+@app.errorhandler(404)
+def pagina_nao_encontrada(e):
+    """Redireciona para login se tentar acessar página protegida sem autenticação"""
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Endpoint não encontrado'}), 404
+    return redirect(url_for('login'))
+
+@app.errorhandler(500)
+def erro_servidor(e):
+    """Tratamento de erros do servidor"""
+    print(f"Erro 500: {e}")
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Erro interno do servidor'}), 500
+    flash('Erro interno do servidor. Tente novamente.', 'error')
+    return redirect(url_for('login'))
+@app.route('/api/paciente/alterar-senha', methods=['POST'])
+def alterar_senha_paciente():
+    if 'logged_in' not in session or session.get('user_type') != 'paciente':
+        return jsonify({'error': 'Acesso negado.'}), 403
+
+    paciente_id = session.get('user_id')
+    data = request.get_json()
+
+    senha_atual = data.get('senha_atual')
+    nova_senha = data.get('nova_senha')
+    confirmar_senha = data.get('confirmar_senha')
+
+    if not all([senha_atual, nova_senha, confirmar_senha]):
+        return jsonify({'error': 'Todos os campos são obrigatórios.'}), 400
+
+    if nova_senha != confirmar_senha:
+        return jsonify({'error': 'As senhas não coincidem.'}), 400
+
+    if len(nova_senha) < 6:
+        return jsonify({'error': 'A nova senha deve ter no mínimo 6 caracteres.'}), 400
+
+    paciente = Paciente.query.get(paciente_id)
+    if not paciente:
+        return jsonify({'error': 'Paciente não encontrado.'}), 404
+
+    # Verificar senha atual
+    if not check_password_hash(paciente.senha, senha_atual):
+        return jsonify({'error': 'Senha atual incorreta.'}), 400
+
+    try:
+        # Atualizar senha
+        paciente.senha = generate_password_hash(nova_senha, method='pbkdf2:sha256')
+        db.session.commit()
+        return jsonify({'message': 'Senha alterada com sucesso!'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Erro ao alterar senha.'}), 500
+# Rota para exibir o formulário de cadastro do Mestre
+# Rota para exibir o formulário de cadastro do Mestre
+@app.route('/cadastroMestre', methods=['GET'])
+def cadastro_mestre():
+    messages = session.pop('_flashes', [])
+    return render_template('cadastroMestre.html', messages=messages)
+
+# Rota para processar o cadastro do Mestre
+@app.route('/cadastrar-mestre', methods=['POST'])
+def cadastrar_mestre():
+    try:
+        print("DEBUG: Recebendo dados do cadastro do Mestre")
+        
+        dados_mestre = {
+            'nome': request.form.get('nome'),
+            'cpf': request.form.get('cpf'),
+            'telefone': request.form.get('telefone'),
+            'email': request.form.get('email'),
+            'registro_profissional': request.form.get('registro_profissional')
+        }
+        
+        # Verificar duplicatas
+        tem_duplicata, mensagem = verificar_duplicatas('mestre', dados_mestre)
+        if tem_duplicata:
+            flash(mensagem, 'error')
+            return redirect(url_for('cadastro_mestre'))
+        
+        print(f"DEBUG: Dados recebidos - {dados_mestre}")
+        
+        # Validar campos obrigatórios
+        campos_obrigatorios = ['nome', 'cpf', 'telefone', 'email', 'registro_profissional']
+        for campo in campos_obrigatorios:
+            if not dados_mestre[campo]:
+                flash(f'O campo {campo} é obrigatório.', 'error')
+                return redirect(url_for('cadastro_mestre'))
+        
+        # Verificar se email já existe
+        if Mestre.query.filter_by(email=dados_mestre['email']).first():
+            flash('Este email já está cadastrado.', 'error')
+            return redirect(url_for('cadastro_mestre'))
+        
+        # Verificar se CPF já existe
+        if Mestre.query.filter_by(cpf=dados_mestre['cpf']).first():
+            flash('Este CPF já está cadastrado.', 'error')
+            return redirect(url_for('cadastro_mestre'))
+        
+        # Salvar na sessão e redirecionar para criar senha
+        session['dados_mestre'] = dados_mestre
+        return redirect(url_for('criar_senha_mestre'))
+        
+    except Exception as e:
+        print(f"ERRO no cadastro do mestre: {e}")
+        flash('Erro ao processar cadastro. Tente novamente.', 'error')
+        return redirect(url_for('cadastro_mestre'))
+
+# Rota para criar senha do Mestre
+@app.route('/criar-senha-mestre', methods=['GET', 'POST'])
+def criar_senha_mestre():
+    # Verificar se há dados do mestre na sessão
+    if 'dados_mestre' not in session:
+        flash('Por favor, preencha os dados do mestre primeiro.', 'error')
+        return redirect(url_for('cadastro_mestre'))
+    
+    if request.method == 'POST':
+        try:
+            senha = request.form.get('senha')
+            confirmar_senha = request.form.get('confirmar_senha')
+            
+            # Validar senhas
+            if senha != confirmar_senha:
+                flash('As senhas não coincidem.', 'error')
+                return render_template('criarSenha_mestre.html')
+            
+            if len(senha) < 8:
+                flash('A senha deve ter no mínimo 8 caracteres.', 'error')
+                return render_template('criarSenha_mestre.html')
+            
+            # Hash da senha
+            hashed_senha = generate_password_hash(senha, method='pbkdf2:sha256')
+            
+            dados_mestre = session['dados_mestre']
+            
+            # Criar novo Mestre
+            novo_mestre = Mestre(
+                nome=dados_mestre['nome'],
+                cpf=dados_mestre['cpf'],
+                telefone=dados_mestre['telefone'],
+                email=dados_mestre['email'],
+                registro_profissional=dados_mestre['registro_profissional'],
+                senha=hashed_senha
+            )
+            
+            # Salvar no banco
+            db.session.add(novo_mestre)
+            db.session.commit()
+            
+            # Fazer login automático
+            session['logged_in'] = True
+            session['user_id'] = novo_mestre.id
+            session['user_type'] = 'mestre'
+            session['nome_usuario'] = novo_mestre.nome
+            
+            flash('Mestre cadastrado com sucesso!', 'success')
+            session.pop('dados_mestre', None)
+            
+            # Redirecionar para aba_admin
+            return redirect(url_for('aba_admin'))
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"ERRO ao criar senha do mestre: {e}")
+            flash(f'Erro ao cadastrar mestre: {str(e)}', 'error')
+            return render_template('criarSenha_mestre.html')
+    
+    messages = session.pop('_flashes', [])
+    return render_template('criarSenha_mestre.html', messages=messages)
+
+# Rota para a aba do administrador (Mestre)
+@app.route('/aba_admin')
+def aba_admin():
+    print("DEBUG: Acessando a rota /aba_admin.")
+    
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        flash('Acesso negado. Por favor, faça login como mestre.', 'error')
+        return redirect(url_for('login'))
+
+    mestre_id = session.get('user_id')
+    if not mestre_id:
+        flash('Erro na sessão. Por favor, faça login novamente.', 'error')
+        return redirect(url_for('login'))
+
+    mestre = Mestre.query.get(mestre_id)
+
+    if not mestre:
+        flash('Mestre não encontrado.', 'error')
+        session.clear()
+        return redirect(url_for('login'))
+
+    messages = session.pop('_flashes', [])
+    return render_template("aba_admin.html", mestre=mestre, messages=messages)
+
+@app.route('/admin/consultas', methods=['GET'])
+def admin_consultas_estagiarios():
+    print("DEBUG: Acessando a rota /admin/consultas.")
+
+    # Restrito ao perfil mestre (administrador)
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        flash('Acesso negado. Por favor, faça login como mestre.', 'error')
+        return redirect(url_for('login'))
+
+    # Filtros opcionais via query string
+    termo_busca = request.args.get('busca', '').strip()
+    filtro_grupo = request.args.get('grupo', '').strip()
+    filtro_semestre = request.args.get('semestre', '').strip()
+
+    # Buscar estagiários
+    query = Estagiario.query
+    if termo_busca:
+        # Busca simples por nome, RA ou email institucional
+        query = query.filter(
+            (Estagiario.nome.ilike(f"%{termo_busca}%")) |
+            (Estagiario.RA.ilike(f"%{termo_busca}%")) |
+            (Estagiario.emailfsa.ilike(f"%{termo_busca}%"))
+        )
+
+    estagiarios_db = query.all()
+
+    # Montar lista no formato esperado pelo template
+    hoje_inicio = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+    hoje_fim = datetime.datetime.combine(datetime.date.today(), datetime.time.max)
+
+    estagiarios_view = []
+    for e in estagiarios_db:
+        total_consultas = Agendamento.query.filter_by(estagiario_id=e.id).count()
+        consultas_hoje = Agendamento.query.filter(
+            Agendamento.estagiario_id == e.id,
+            Agendamento.data_agendamento.isnot(None),
+            Agendamento.data_agendamento >= hoje_inicio,
+            Agendamento.data_agendamento <= hoje_fim
+        ).count()
+
+        # Tentar derivar semestre a partir de curso_periodo (quando existir)
+        semestre = ''
+        if getattr(e, 'curso_periodo', None):
+            try:
+                # Extrai primeiro número encontrado no texto, ex: "5º semestre" -> 5
+                import re
+                match = re.search(r"(\d+)", str(e.curso_periodo))
+                semestre = match.group(1) if match else ''
+            except Exception:
+                semestre = ''
+
+        # Não existe campo de grupo no modelo atual
+        grupo = ''
+
+        # Aplicar filtros de grupo/semestre, se fornecidos
+        if filtro_grupo and grupo != filtro_grupo:
+            continue
+        if filtro_semestre and str(semestre) != str(filtro_semestre):
+            continue
+
+        estagiarios_view.append({
+            'id': e.id,
+            'nome': e.nome,
+            'email': getattr(e, 'emailfsa', None),
+            'ra': getattr(e, 'RA', None),
+            'grupo': grupo or None,
+            'semestre': str(semestre) if semestre else None,
+            'consultas_count': total_consultas,
+            'consultas_hoje': consultas_hoje,
+        })
+
+    # Dados de cabeçalho/sumário
+    total_estagiarios = len(estagiarios_view)
+    consultas_hoje_total = sum(e['consultas_hoje'] for e in estagiarios_view)
+    prontuarios_aguardando = Agendamento.query.filter_by(status='confirmado').count()
+    prontuarios_avaliar = Agendamento.query.filter_by(status='concluido').count()
+
+    # Opções de filtros
+    grupos_disponiveis = ['A', 'B', 'C']
+    semestres_disponiveis = [str(i) for i in range(1, 9)]
+
+    context = {
+        'estagiarios': estagiarios_view,
+        'total_estagiarios': total_estagiarios,
+        'consultas_hoje': consultas_hoje_total,
+        'prontuarios_aguardando': prontuarios_aguardando,
+        'prontuarios_avaliar': prontuarios_avaliar,
+        'grupos_disponiveis': grupos_disponiveis,
+        'semestres_disponiveis': semestres_disponiveis,
+        'filtros_ativos': {
+            'busca': termo_busca,
+            'grupo': filtro_grupo,
+            'semestre': filtro_semestre,
+        }
+    }
+
+    return render_template('consultas_estagiarios.html', **context)
+
+@app.route('/api/admin/estagiarios', methods=['GET'])
+def api_admin_estagiarios():
+    """Lista estagiários com estatísticas, para alimentar aba_admin.
+    Retorna: {
+        estagiarios: [{id, nome, email, ra, grupo, semestre, consultas_count, consultas_hoje}],
+        stats: { total_estagiarios, consultas_hoje, prontuarios_aguardando, prontuarios_avaliar }
+    }
+    """
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+    termo_busca = request.args.get('busca', '').strip()
+
+    query = Estagiario.query
+    if termo_busca:
+        query = query.filter(
+            (Estagiario.nome.ilike(f"%{termo_busca}%")) |
+            (Estagiario.RA.ilike(f"%{termo_busca}%")) |
+            (Estagiario.emailfsa.ilike(f"%{termo_busca}%"))
+        )
+
+    estagiarios_db = query.all()
+
+    hoje_inicio = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+    hoje_fim = datetime.datetime.combine(datetime.date.today(), datetime.time.max)
+
+    estagiarios_view = []
+    total_consultas_hoje = 0
+
+    for e in estagiarios_db:
+        total_consultas = Agendamento.query.filter_by(estagiario_id=e.id).count()
+        consultas_hoje = Agendamento.query.filter(
+            Agendamento.estagiario_id == e.id,
+            Agendamento.data_agendamento.isnot(None),
+            Agendamento.data_agendamento >= hoje_inicio,
+            Agendamento.data_agendamento <= hoje_fim
+        ).count()
+        total_consultas_hoje += consultas_hoje
+
+        # Derivar semestre do curso_periodo se houver
+        semestre = ''
+        if getattr(e, 'curso_periodo', None):
+            try:
+                import re
+                match = re.search(r"(\d+)", str(e.curso_periodo))
+                semestre = match.group(1) if match else ''
+            except Exception:
+                semestre = ''
+
+        estagiarios_view.append({
+            'id': e.id,
+            'nome': e.nome,
+            'email': getattr(e, 'emailfsa', None),
+            'ra': getattr(e, 'RA', None),
+            'grupo': None,
+            'semestre': str(semestre) if semestre else None,
+            'consultas_count': total_consultas,
+            'consultas_hoje': consultas_hoje,
+        })
+
+    stats = {
+        'total_estagiarios': len(estagiarios_view),
+        'consultas_hoje': total_consultas_hoje,
+        'prontuarios_aguardando': Agendamento.query.filter_by(status='confirmado').count(),
+        'prontuarios_avaliar': Agendamento.query.filter_by(status='concluido').count(),
+    }
+
+    return jsonify({'estagiarios': estagiarios_view, 'stats': stats})
+
+@app.route('/api/admin/estagiarios', methods=['POST'])
+def api_admin_criar_estagiario():
+    """Cria um novo estagiário a partir de dados enviados pelo admin (mestre)."""
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        nome = (data.get('nome') or '').strip()
+        emailfsa = (data.get('emailfsa') or '').strip()
+        ra = (data.get('RA') or '').strip()
+        cpf = (data.get('cpf') or '').strip()
+        telefone_aluno = (data.get('telefone_aluno') or '').strip()
+        curso_periodo = (data.get('curso_periodo') or '').strip()
+        data_nascimento_str = (data.get('data_nascimento') or '').strip()
+
+        # Validação simples
+        campos_obrigatorios = [nome, emailfsa, ra, cpf, telefone_aluno, curso_periodo, data_nascimento_str]
+        if not all(campos_obrigatorios):
+            return jsonify({'error': 'Preencha todos os campos obrigatórios.'}), 400
+
+        # Duplicidades básicas
+        if Estagiario.query.filter_by(emailfsa=emailfsa).first():
+            return jsonify({'error': 'Email institucional já cadastrado.'}), 400
+        if Estagiario.query.filter_by(RA=ra).first():
+            return jsonify({'error': 'RA já cadastrado.'}), 400
+        if Estagiario.query.filter_by(cpf=cpf).first():
+            return jsonify({'error': 'CPF já cadastrado.'}), 400
+        if Estagiario.query.filter_by(telefone_aluno=telefone_aluno).first():
+            return jsonify({'error': 'Telefone já cadastrado.'}), 400
+
+        # Converter data de nascimento
+        try:
+            data_nascimento = datetime.datetime.strptime(data_nascimento_str, '%Y-%m-%d').date()
+        except Exception:
+            return jsonify({'error': 'Data de nascimento inválida. Use YYYY-MM-DD.'}), 400
+
+        # Senha temporária segura
+        temp_password = data.get('senha') or 'Temp@12345'
+        hashed_senha = generate_password_hash(temp_password, method='pbkdf2:sha256')
+
+        novo = Estagiario(
+            nome=nome,
+            data_nascimento=data_nascimento,
+            RA=ra,
+            cpf=cpf,
+            telefone_aluno=telefone_aluno,
+            emailfsa=emailfsa,
+            curso_periodo=curso_periodo,
+            senha=hashed_senha,
+        )
+
+        db.session.add(novo)
+        db.session.commit()
+
+        return jsonify({'success': True, 'id': novo.id}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao criar estagiário: {e}")
+        return jsonify({'error': f'Erro ao criar estagiário: {str(e)}'}), 500
+
+def verificar_duplicatas(tipo_usuario, dados):
+    """
+    Verifica se já existem registros com os mesmos dados únicos
+    Retorna (True, mensagem_erro) se encontrar duplicata, (False, None) caso contrário
+    """
+    
+    # Verificar email único entre todos os usuários
+    if tipo_usuario in ['paciente', 'mestre']:
+        email = dados.get('email')
+        if email:
+            if Paciente.query.filter_by(email=email).first():
+                return True, 'Este email já está cadastrado no sistema'
+            if Mestre.query.filter_by(email=email).first():
+                return True, 'Este email já está cadastrado no sistema'
+            # Verificar também em estagiários se necessário
+    
+    elif tipo_usuario == 'estagiario':
+        emailfsa = dados.get('emailfsa')
+        if emailfsa:
+            if Estagiario.query.filter_by(emailfsa=emailfsa).first():
+                return True, 'Este email institucional já está cadastrado'
+            # Verificar se não existe em outras tabelas com email normal
+            if Paciente.query.filter_by(email=emailfsa).first():
+                return True, 'Este email já está cadastrado no sistema'
+            if Mestre.query.filter_by(email=emailfsa).first():
+                return True, 'Este email já está cadastrado no sistema'
+    
+    # Verificar CPF único
+    cpf = dados.get('cpf')
+    if cpf:
+        cpf_limpo = cpf.replace('.', '').replace('-', '')
+        if Paciente.query.filter(Paciente.cpf.contains(cpf_limpo)).first():
+            return True, 'Este CPF já está cadastrado no sistema'
+        if Estagiario.query.filter(Estagiario.cpf.contains(cpf_limpo)).first():
+            return True, 'Este CPF já está cadastrado no sistema'
+        if Mestre.query.filter(Mestre.cpf.contains(cpf_limpo)).first():
+            return True, 'Este CPF já está cadastrado no sistema'
+    
+    # Verificar telefone único
+    telefone = dados.get('telefone') or dados.get('telefone_aluno')
+    if telefone:
+        telefone_limpo = ''.join(filter(str.isdigit, telefone))
+        if Paciente.query.filter(Paciente.telefone.contains(telefone_limpo)).first():
+            return True, 'Este telefone já está cadastrado no sistema'
+        if Estagiario.query.filter(Estagiario.telefone_aluno.contains(telefone_limpo)).first():
+            return True, 'Este telefone já está cadastrado no sistema'
+        if Mestre.query.filter(Mestre.telefone.contains(telefone_limpo)).first():
+            return True, 'Este telefone já está cadastrado no sistema'
+    
+    # Verificar RA único (apenas para estagiários)
+    if tipo_usuario == 'estagiario':
+        ra = dados.get('RA')
+        if ra and Estagiario.query.filter_by(RA=ra).first():
+            return True, 'Este RA já está cadastrado'
+    
+    # Verificar registro profissional único (apenas para mestres)
+    if tipo_usuario == 'mestre':
+        registro = dados.get('registro_profissional')
+        if registro and Mestre.query.filter_by(registro_profissional=registro).first():
+            return True, 'Este registro profissional já está cadastrado'
+    
+    return False, None
+
+# ========================
+# APIs para aba_admin
+# ========================
+@app.route('/api/admin/estatisticas', methods=['GET'])
+def admin_estatisticas():
+    try:
+        if 'logged_in' not in session or session.get('user_type') != 'mestre':
+            return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+        # Totais simples
+        total_pacientes = Paciente.query.count()
+
+        # Consultas hoje
+        hoje_inicio = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+        hoje_fim = datetime.datetime.combine(datetime.date.today(), datetime.time.max)
+        consultas_hoje = Agendamento.query.filter(
+            Agendamento.data_agendamento.isnot(None),
+            Agendamento.data_agendamento >= hoje_inicio,
+            Agendamento.data_agendamento <= hoje_fim
+        ).count()
+
+        # Contagens por status relevantes
+        consultas_confirmadas = Agendamento.query.filter_by(status='confirmado').count()
+        consultas_nao_confirmadas = Agendamento.query.filter(Agendamento.status.in_(['solicitado'])).count()
+
+        # Solicitações de triagem (pendentes)
+        solicitacoes_triagem = Agendamento.query.filter_by(status='solicitado').count()
+
+        # Prontuários para avaliar (use concluido como pronto e confirmado como pendente de avaliação)
+        prontuarios_avaliar = Agendamento.query.filter_by(status='concluido').count()
+
+        # Próximas consultas (próximos 7 dias)
+        agora = datetime.datetime.now()
+        ate = agora + datetime.timedelta(days=7)
+        proximas = Agendamento.query.filter(
+            Agendamento.data_agendamento.isnot(None),
+            Agendamento.data_agendamento >= agora,
+            Agendamento.data_agendamento <= ate
+        ).order_by(Agendamento.data_agendamento.asc()).limit(5).all()
+
+        proximas_consultas = []
+        for ag in proximas:
+            paciente_nome = Paciente.query.get(ag.paciente_id).nome if ag.paciente_id else None
+            estagiario_nome = Estagiario.query.get(ag.estagiario_id).nome if ag.estagiario_id else 'A definir'
+            proximas_consultas.append({
+                'paciente_nome': paciente_nome,
+                'estagiario_nome': estagiario_nome,
+                'data_agendamento': ag.data_agendamento.isoformat() if ag.data_agendamento else None
+            })
+
+        return jsonify({
+            'total_pacientes': total_pacientes,
+            'consultas_hoje': consultas_hoje,
+            'solicitacoes_triagem': solicitacoes_triagem,
+            'prontuarios_avaliar': prontuarios_avaliar,
+            'consultas_nao_confirmadas': consultas_nao_confirmadas,
+            'consultas_confirmadas': consultas_confirmadas,
+            'proximas_consultas': proximas_consultas
+        })
+    except Exception as e:
+        print(f"Erro ao montar estatísticas admin: {e}")
+        return jsonify({'error': 'Erro ao carregar estatísticas.'}), 500
+
+
+@app.route('/api/admin/pacientes', methods=['GET'])
+def admin_listar_pacientes():
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+    try:
+        filtro = request.args.get('filtro', 'todos')
+        busca = (request.args.get('busca') or '').strip()
+
+        # Base: último agendamento por paciente para status atual
+        sub_max = db.session.query(
+            Agendamento.paciente_id,
+            db.func.max(Agendamento.id).label('max_id')
+        ).group_by(Agendamento.paciente_id).subquery()
+
+        query = db.session.query(Agendamento, Paciente, Estagiario).join(
+            sub_max,
+            db.and_(Agendamento.paciente_id == sub_max.c.paciente_id, Agendamento.id == sub_max.c.max_id)
+        ).join(Paciente, Paciente.id == Agendamento.paciente_id).outerjoin(Estagiario, Estagiario.id == Agendamento.estagiario_id)
+
+        # Aplicar filtro de status nas categorias da UI
+        if filtro == 'andamento':
+            query = query.filter(Agendamento.status.in_(['confirmado']))
+        elif filtro == 'aprovar':
+            query = query.filter(Agendamento.status.in_(['solicitado']))
+        elif filtro == 'finalizados':
+            query = query.filter(Agendamento.status.in_(['concluido']))
+        else:
+            # 'todos' - sem filtro extra
+            pass
+
+        # Busca por nome de paciente ou estagiário
+        if busca:
+            query = query.filter(db.or_(Paciente.nome.ilike(f'%{busca}%'), Estagiario.nome.ilike(f'%{busca}%')))
+
+        resultados = query.order_by(db.desc(Agendamento.data_solicitacao)).limit(100).all()
+
+        pacientes_resp = []
+        for ag, pac, est in resultados:
+            pacientes_resp.append({
+                'paciente_nome': pac.nome,
+                'estagiario_nome': est.nome if est else None,
+                'data_agendamento': ag.data_agendamento.strftime('%d/%m/%Y %H:%M') if ag.data_agendamento else None,
+                'tipo_consulta': 'Solicitação de Triagem' if ag.status == 'solicitado' else 'Consulta',
+                'status': ag.status
+            })
+
+        # Stats para os badges
+        stats = {
+            'todos': db.session.query(sub_max).count(),
+            'andamento': db.session.query(Agendamento).join(sub_max, db.and_(Agendamento.paciente_id == sub_max.c.paciente_id, Agendamento.id == sub_max.c.max_id)).filter(Agendamento.status.in_(['confirmado'])).count(),
+            'aprovar': db.session.query(Agendamento).join(sub_max, db.and_(Agendamento.paciente_id == sub_max.c.paciente_id, Agendamento.id == sub_max.c.max_id)).filter(Agendamento.status.in_(['solicitado'])).count(),
+            'finalizados': db.session.query(Agendamento).join(sub_max, db.and_(Agendamento.paciente_id == sub_max.c.paciente_id, Agendamento.id == sub_max.c.max_id)).filter(Agendamento.status.in_(['concluido'])).count(),
+        }
+
+        return jsonify({'pacientes': pacientes_resp, 'stats': stats})
+    except Exception as e:
+        print(f"Erro ao listar pacientes admin: {e}")
+        return jsonify({'error': 'Erro ao listar pacientes.'}), 500
+
+
+@app.route('/api/admin/prontuarios', methods=['GET'])
+def admin_listar_prontuarios():
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+    try:
+        busca = (request.args.get('busca') or '').strip()
+
+        # Preferir registros da tabela Prontuario (mais detalhados); fallback para agendamentos concluídos
+        query = db.session.query(Prontuario, Paciente, Estagiario).join(
+            Paciente, Paciente.id == Prontuario.paciente_id
+        ).outerjoin(Estagiario, Estagiario.id == Prontuario.estagiario_id)
+
+        if busca:
+            query = query.filter(db.or_(Paciente.nome.ilike(f'%{busca}%'), Estagiario.nome.ilike(f'%{busca}%')))
+
+        resultados = query.order_by(db.desc(Prontuario.data_criacao)).limit(200).all()
+
+        prontuarios = []
+        for pr, pac, est in resultados:
+            prontuarios.append({
+                'id': pr.id,
+                'paciente_nome': pac.nome,
+                'estagiario_nome': est.nome if est else None,
+                'data_criacao': pr.data_criacao.strftime('%d/%m/%Y %H:%M') if pr.data_criacao else None,
+                'status': pr.status,
+                'tipo_triagem': pr.tipo_triagem,
+                'sala_atendimento': pr.sala_atendimento,
+                'ultima_atualizacao': pr.ultima_atualizacao.strftime('%d/%m/%Y %H:%M') if pr.ultima_atualizacao else None
+            })
+
+        # Estatísticas da seção de prontuários
+        total = db.session.query(Prontuario).count()
+        pendentes = db.session.query(Prontuario).filter(Prontuario.status == 'pendente').count()
+        aprovados = db.session.query(Prontuario).filter(Prontuario.status == 'aprovado').count()
+        revisao = db.session.query(Prontuario).filter(Prontuario.status == 'reajustes').count()
+
+        stats = {
+            'total': total,
+            'pendentes': pendentes,
+            'aprovados': aprovados,
+            'revisao': revisao
+        }
+
+        return jsonify({'prontuarios': prontuarios, 'stats': stats})
+    except Exception as e:
+        print(f"Erro ao listar prontuários admin: {e}")
+        return jsonify({'error': 'Erro ao listar prontuários.'}), 500
+
+@app.route('/api/admin/prontuarios/<int:prontuario_id>', methods=['GET'])
+def admin_obter_prontuario(prontuario_id):
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+    try:
+        pr = Prontuario.query.get(prontuario_id)
+        if not pr:
+            return jsonify({'error': 'Prontuário não encontrado.'}), 404
+
+        paciente = Paciente.query.get(pr.paciente_id)
+        estagiario = Estagiario.query.get(pr.estagiario_id)
+
+        return jsonify({
+            'id': pr.id,
+            'agendamento_id': pr.agendamento_id,
+            'paciente_id': pr.paciente_id,
+            'paciente_nome': paciente.nome if paciente else None,
+            'estagiario_id': pr.estagiario_id,
+            'estagiario_nome': estagiario.nome if estagiario else None,
+            'tipo_triagem': pr.tipo_triagem,
+            'sala_atendimento': pr.sala_atendimento,
+            'queixa_principal': pr.queixa_principal,
+            'historico_paciente': pr.historico_paciente,
+            'avaliacao_inicial': pr.avaliacao_inicial,
+            'tipo_encaminhamento': pr.tipo_encaminhamento,
+            'encaminhamento_descricao': pr.encaminhamento_descricao,
+            'status': pr.status,
+            'data_criacao': pr.data_criacao.strftime('%d/%m/%Y %H:%M') if pr.data_criacao else None,
+            'ultima_atualizacao': pr.ultima_atualizacao.strftime('%d/%m/%Y %H:%M') if pr.ultima_atualizacao else None
+        }), 200
+    except Exception as e:
+        print(f"Erro ao obter prontuário: {e}")
+        return jsonify({'error': 'Erro ao obter prontuário.'}), 500
+
+@app.route('/api/admin/prontuarios/<int:prontuario_id>', methods=['PUT'])
+def admin_atualizar_prontuario(prontuario_id):
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+    try:
+        pr = Prontuario.query.get(prontuario_id)
+        if not pr:
+            return jsonify({'error': 'Prontuário não encontrado.'}), 404
+
+        data = request.get_json() or {}
+
+        # Atualiza apenas campos permitidos
+        campos_texto = ['queixa_principal', 'historico_paciente', 'avaliacao_inicial', 'encaminhamento_descricao']
+        for campo in campos_texto:
+            if campo in data and isinstance(data.get(campo), str):
+                setattr(pr, campo, (data.get(campo) or '').strip())
+
+        if 'tipo_encaminhamento' in data:
+            pr.tipo_encaminhamento = data.get('tipo_encaminhamento')
+        if 'tipo_triagem' in data:
+            pr.tipo_triagem = data.get('tipo_triagem')
+        if 'sala_atendimento' in data:
+            pr.sala_atendimento = data.get('sala_atendimento')
+        if 'status' in data:
+            pr.status = data.get('status')
+
+        db.session.commit()
+        return jsonify({'message': 'Prontuário atualizado com sucesso!'}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao atualizar prontuário: {e}")
+        return jsonify({'error': 'Erro ao atualizar prontuário.'}), 500
+
+@app.route('/api/admin/prontuarios', methods=['POST'])
+def admin_criar_prontuario():
+    """Permite que administradores criem prontuários diretamente."""
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como mestre.'}), 403
+
+    try:
+        data = request.get_json() or {}
+
+        paciente_id = data.get('paciente_id')
+        estagiario_id = data.get('estagiario_id')
+        queixa_principal = (data.get('queixa_principal') or '').strip()
+        historico_paciente = (data.get('historico_paciente') or '').strip()
+        avaliacao_inicial = (data.get('avaliacao_inicial') or '').strip()
+
+        if not paciente_id or not estagiario_id:
+            return jsonify({'error': 'Paciente e estagiário são obrigatórios.'}), 400
+
+        if not queixa_principal or not historico_paciente or not avaliacao_inicial:
+            return jsonify({'error': 'Queixa Principal, Histórico do Paciente e Avaliação Inicial são obrigatórios.'}), 400
+
+        # Verificar se paciente e estagiário existem
+        paciente = Paciente.query.get(paciente_id)
+        estagiario = Estagiario.query.get(estagiario_id)
+
+        if not paciente:
+            return jsonify({'error': 'Paciente não encontrado.'}), 404
+        if not estagiario:
+            return jsonify({'error': 'Estagiário não encontrado.'}), 404
+
+        # Criar um agendamento para associar ao prontuário (ou usar existente)
+        # Se não houver agendamento específico, criamos um genérico
+        agendamento_existente = Agendamento.query.filter_by(
+            paciente_id=paciente_id,
+            estagiario_id=estagiario_id,
+            status='concluido'
+        ).first()
+
+        if agendamento_existente:
+            agendamento_id = agendamento_existente.id
+        else:
+            # Criar novo agendamento para o prontuário
+            novo_agendamento = Agendamento(
+                paciente_id=paciente_id,
+                estagiario_id=estagiario_id,
+                data_solicitacao=datetime.datetime.now(),
+                data_agendamento=datetime.datetime.now(),
+                status='concluido',
+                observacoes_estagiario='Prontuário criado pelo administrador'
+            )
+            db.session.add(novo_agendamento)
+            db.session.flush()  # Para obter o ID
+            agendamento_id = novo_agendamento.id
+
+        # Criar o prontuário
+        prontuario = Prontuario(
+            agendamento_id=agendamento_id,
+            estagiario_id=estagiario_id,
+            paciente_id=paciente_id,
+            tipo_triagem=data.get('tipo_triagem'),
+            sala_atendimento=data.get('sala_atendimento'),
+            queixa_principal=queixa_principal,
+            historico_paciente=historico_paciente,
+            avaliacao_inicial=avaliacao_inicial,
+            tipo_encaminhamento=data.get('tipo_encaminhamento'),
+            encaminhamento_descricao=data.get('encaminhamento_descricao'),
+            status=data.get('status', 'pendente')
+        )
+
+        db.session.add(prontuario)
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Prontuário criado com sucesso!',
+            'prontuario_id': prontuario.id
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao criar prontuário admin: {e}")
+        return jsonify({'error': f'Erro ao criar prontuário: {str(e)}'}), 500
+
+# --- ROTAS DE NOTIFICACAO ---
+@app.route('/admin/notificacoes', methods=['GET', 'POST'])
+def admin_notificacoes():
+    # Apenas admin pode acessar
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        flash('Acesso negado. Faça login como mestre.', 'error')
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        titulo = request.form.get('titulo')
+        mensagem = request.form.get('mensagem')
+        destinatario_id = request.form.get('destinatario_id') or None
+        enviado_por = session.get('nome_usuario')
+        notif = Notificacao(
+            titulo=titulo,
+            mensagem=mensagem,
+            destinatario_id=int(destinatario_id) if destinatario_id else None,
+            enviado_por=enviado_por
+        )
+        db.session.add(notif)
+        db.session.commit()
+        flash('Notificação enviada!', 'success')
+
+    # Buscar notificações existentes
+    notificacoes = Notificacao.query.order_by(Notificacao.data_criacao.desc()).all()
+    estagiarios = Estagiario.query.all()
+    return render_template('admin_notificacoes.html', notificacoes=notificacoes, estagiarios=estagiarios)
+
+@app.route('/comunicados')
+def comunicados():
+    # Só pode ver se for estagiário logado
+    if 'logged_in' not in session or session.get('user_type') != 'estagiario':
+        flash('Acesso negado. Faça login como estagiário.', 'error')
+        return redirect(url_for('login'))
+
+    estagiario_id = session.get('user_id')
+    notificacoes = Notificacao.query.filter(
+        (Notificacao.destinatario_id.is_(None)) | (Notificacao.destinatario_id == estagiario_id)
+    ).order_by(Notificacao.data_criacao.desc()).all()
+    return render_template('comunicados.html', notificacoes=notificacoes)
+
+# --- ROTAS DE COMUNICADOS PARA PACIENTES ---
+@app.route('/api/paciente/comunicados', methods=['GET'])
+def listar_comunicados_paciente():
+    """Lista comunicados para o paciente logado."""
+    if 'logged_in' not in session or session.get('user_type') != 'paciente':
+        return jsonify({'error': 'Acesso negado. Por favor, faça login como paciente.'}), 403
+
+    paciente_id = session.get('user_id')
+    if not paciente_id:
+        return jsonify({'error': 'ID do paciente não encontrado na sessão.'}), 400
+
+    try:
+        comunicados = ComunicadoPaciente.query.filter(
+            (ComunicadoPaciente.paciente_id.is_(None)) | (ComunicadoPaciente.paciente_id == paciente_id)
+        ).order_by(ComunicadoPaciente.data_criacao.desc()).all()
+        
+        lista = []
+        for c in comunicados:
+            lista.append({
+                'id': c.id,
+                'titulo': c.titulo,
+                'mensagem': c.mensagem,
+                'data_criacao': c.data_criacao.strftime('%d/%m/%Y') if c.data_criacao else None,
+                'enviado_por': c.enviado_por
+            })
+
+        return jsonify({'comunicados': lista}), 200
+
+    except Exception as e:
+        print(f"Erro ao listar comunicados do paciente: {e}")
+        return jsonify({'error': f'Erro ao listar comunicados: {str(e)}'}), 500
+
+@app.route('/api/admin/comunicados-pacientes', methods=['POST'])
+def criar_comunicado_paciente():
+    """Cria um comunicado para pacientes (geral ou específico)."""
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Apenas administradores podem criar comunicados.'}), 403
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Dados não fornecidos.'}), 400
+
+        titulo = data.get('titulo', '').strip()
+        mensagem = data.get('mensagem', '').strip()
+        paciente_id = data.get('paciente_id')  # None para todos, ou ID específico
+        enviado_por = session.get('nome_usuario') or 'Administrador'
+
+        if not titulo or not mensagem:
+            return jsonify({'error': 'Título e mensagem são obrigatórios.'}), 400
+
+        comunicado = ComunicadoPaciente(
+            titulo=titulo,
+            mensagem=mensagem,
+            paciente_id=int(paciente_id) if paciente_id else None,
+            enviado_por=enviado_por
+        )
+        db.session.add(comunicado)
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Comunicado criado com sucesso!',
+            'comunicado': {
+                'id': comunicado.id,
+                'titulo': comunicado.titulo,
+                'mensagem': comunicado.mensagem,
+                'data_criacao': comunicado.data_criacao.isoformat() if comunicado.data_criacao else None
+            }
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao criar comunicado: {e}")
+        return jsonify({'error': f'Erro ao criar comunicado: {str(e)}'}), 500
+
+@app.route('/api/admin/comunicados-pacientes', methods=['GET'])
+def listar_comunicados_pacientes_admin():
+    """Lista todos os comunicados de pacientes para o admin."""
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado. Apenas administradores podem ver comunicados.'}), 403
+
+    try:
+        comunicados = ComunicadoPaciente.query.order_by(ComunicadoPaciente.data_criacao.desc()).all()
+        
+        lista = []
+        for c in comunicados:
+            paciente_nome = None
+            if c.paciente_id:
+                paciente = Paciente.query.get(c.paciente_id)
+                paciente_nome = paciente.nome if paciente else 'Paciente não encontrado'
+            
+            lista.append({
+                'id': c.id,
+                'titulo': c.titulo,
+                'mensagem': c.mensagem,
+                'data_criacao': c.data_criacao.strftime('%d/%m/%Y %H:%M') if c.data_criacao else None,
+                'enviado_por': c.enviado_por,
+                'paciente_id': c.paciente_id,
+                'paciente_nome': paciente_nome,
+                'tipo': 'Específico' if c.paciente_id else 'Geral'
+            })
+
+        return jsonify({'comunicados': lista}), 200
+
+    except Exception as e:
+        print(f"Erro ao listar comunicados: {e}")
+        return jsonify({'error': f'Erro ao listar comunicados: {str(e)}'}), 500
+
+@app.route('/api/admin/pacientes/busca', methods=['GET'])
+def buscar_pacientes_admin():
+    """Busca pacientes para o filtro de comunicados."""
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'error': 'Acesso negado.'}), 403
+
+    try:
+        termo = request.args.get('q', '').strip()
+        
+        query = Paciente.query
+        if termo:
+            query = query.filter(
+                (Paciente.nome.ilike(f"%{termo}%")) |
+                (Paciente.email.ilike(f"%{termo}%")) |
+                (Paciente.cpf.ilike(f"%{termo}%"))
+            )
+        
+        pacientes = query.limit(20).all()  # Limitar a 20 resultados
+        
+        lista = []
+        for p in pacientes:
+            lista.append({
+                'id': p.id,
+                'nome': p.nome,
+                'email': p.email,
+                'cpf': p.cpf
+            })
+
+        return jsonify({'pacientes': lista}), 200
+
+    except Exception as e:
+        print(f"Erro ao buscar pacientes: {e}")
+        return jsonify({'error': f'Erro ao buscar pacientes: {str(e)}'}), 500
+
+# Rota para adicionar pacientes pelo admin
+@app.route('/admin/add_paciente', methods=['GET', 'POST'])
+def admin_add_paciente():
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        flash('Acesso negado. Faça login como mestre.', 'error')
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        # Recebe dados do formulário
+        nome = request.form.get('nome')
+        data_nascimento = request.form.get('data_nascimento')
+        genero = request.form.get('genero')
+        cpf = request.form.get('cpf')
+        telefone = request.form.get('telefone')
+        email = request.form.get('email')
+        endereco = request.form.get('endereco')
+        numero_casa = request.form.get('numero_casa')
+        senha = request.form.get('senha')
+        # Cria e salva novo paciente
+        paciente = Paciente(
+            nome=nome,
+            data_nascimento=datetime.datetime.strptime(data_nascimento, '%Y-%m-%d'),
+            genero=genero,
+            cpf=cpf,
+            telefone=telefone,
+            email=email,
+            endereco=endereco,
+            numero_casa=numero_casa,
+            senha=generate_password_hash(senha)
+        )
+        db.session.add(paciente)
+        db.session.commit()
+        flash('Paciente adicionado com sucesso!', 'success')
+        return redirect(url_for('admin_add_paciente'))
+    return render_template('admin_add_paciente.html')
+
+@app.route('/api/admin/meus-dados', methods=['GET'])
+def admin_obter_dados():
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'success': False, 'error': 'Acesso negado'}), 403
+    
+    try:
+        mestre_id = session.get('user_id')
+        mestre = Mestre.query.get(mestre_id)
+        
+        if not mestre:
+            return jsonify({'success': False, 'error': 'Mestre não encontrado'}), 404
+        
+        return jsonify({
+            'success': True,
+            'dados': {
+                'nome': mestre.nome,
+                'email': mestre.email,
+                'cpf': mestre.cpf,
+                'telefone': mestre.telefone,
+                'email_alternativo': mestre.email_alternativo,
+                'registro_profissional': mestre.registro_profissional
+            }
+        })
+        
+    except Exception as e:
+        print(f"Erro ao obter dados do mestre: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno ao obter dados'}), 500
+
+# ========================
+# ROTA PARA ATUALIZAR DADOS DO ADMIN
+# ========================
+
+@app.route('/api/admin/atualizar-dados', methods=['PUT'])
+def admin_atualizar_dados():
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'success': False, 'error': 'Acesso negado'}), 403
+    
+    try:
+        mestre_id = session.get('user_id')
+        mestre = Mestre.query.get(mestre_id)
+        
+        if not mestre:
+            return jsonify({'success': False, 'error': 'Mestre não encontrado'}), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
+        
+        # Atualizar campos permitidos
+        if 'telefone' in data:
+            mestre.telefone = data['telefone']
+        
+        if 'email_alternativo' in data:
+            mestre.email_alternativo = data['email_alternativo']
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Dados atualizados com sucesso!'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao atualizar dados do mestre: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno ao atualizar dados'}), 500
+
+# ========================
+# ROTA PARA ALTERAR SENHA DO ADMIN
+# ========================
+
+@app.route('/api/admin/alterar-senha', methods=['PUT'])
+def admin_alterar_senha():
+    if 'logged_in' not in session or session.get('user_type') != 'mestre':
+        return jsonify({'success': False, 'error': 'Acesso negado'}), 403
+    
+    try:
+        mestre_id = session.get('user_id')
+        mestre = Mestre.query.get(mestre_id)
+        
+        if not mestre:
+            return jsonify({'success': False, 'error': 'Mestre não encontrado'}), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
+        
+        senha_atual = data.get('senha_atual')
+        nova_senha = data.get('nova_senha')
+        
+        if not senha_atual or not nova_senha:
+            return jsonify({'success': False, 'error': 'Senha atual e nova senha são obrigatórias'}), 400
+        
+        # Verificar senha atual
+        if not check_password_hash(mestre.senha, senha_atual):
+            return jsonify({'success': False, 'error': 'Senha atual incorreta'}), 400
+        
+        # Validar nova senha
+        if len(nova_senha) < 8:
+            return jsonify({'success': False, 'error': 'A nova senha deve ter no mínimo 8 caracteres'}), 400
+        
+        # Atualizar senha
+        mestre.senha = generate_password_hash(nova_senha, method='pbkdf2:sha256')
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Senha alterada com sucesso!'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao alterar senha do mestre: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno ao alterar senha'}), 500
