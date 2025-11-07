@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/responsivo.css') }}">
   <title>COEPP - Fundação Santo André</title>
   <style>
     * {
@@ -479,6 +478,272 @@
       font-family: "Times New Roman", Times, serif;
       border-top: 3px solid #001f4d;
       margin-top: 10px;
+    }
+
+    /* ========== MEDIA QUERIES PARA RESPONSIVIDADE ========== */
+    
+    /* Tablets e telas menores */
+    @media (max-width: 1024px) {
+      .hero h1 {
+        font-size: 2.2em;
+      }
+      
+      .hero p {
+        font-size: 1.2em;
+      }
+      
+      .como-funciona img {
+        width: 400px;
+        margin-left: -30px;
+      }
+      
+      .video-section iframe {
+        height: 400px;
+      }
+    }
+    
+    /* Tablets pequenos e celulares grandes */
+    @media (max-width: 768px) {
+      header {
+        padding: 10px 20px;
+        flex-direction: column;
+        gap: 10px;
+      }
+      
+      header nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+      }
+      
+      header nav a {
+        margin: 5px;
+        font-size: 0.9em;
+      }
+      
+      .hero {
+        height: 400px;
+        padding: 120px 20px 30px;
+      }
+      
+      .hero h1 {
+        font-size: 1.8em;
+      }
+      
+      .hero p {
+        font-size: 1.1em;
+      }
+      
+      .hero .btn {
+        padding: 12px 25px;
+        font-size: 1em;
+      }
+      
+      .section {
+        padding: 80px 20px 40px;
+      }
+      
+      .video-section h2 {
+        font-size: 2em;
+      }
+      
+      .video-section p {
+        font-size: 1.2em;
+      }
+      
+      .video-section iframe {
+        height: 300px;
+        width: 100%;
+      }
+      
+      .como-funciona {
+        flex-direction: column;
+        gap: 30px;
+        text-align: center;
+      }
+      
+      .como-funciona img {
+        width: 100%;
+        max-width: 350px;
+        margin-left: 0;
+        order: -1; /* Coloca a imagem antes do texto */
+      }
+      
+      .como-funciona h3 {
+        font-size: 1.7em;
+      }
+      
+      .como-funciona p {
+        font-size: 1.1em;
+        margin-bottom: 25px;
+      }
+      
+      .professor {
+        width: 160px;
+        height: 220px;
+      }
+      
+      .professor img {
+        height: 120px;
+      }
+      
+      .hero-alt {
+        height: 350px;
+        padding: 0 20px;
+      }
+      
+      .hero-alt h1 {
+        font-size: 1.6em;
+      }
+      
+      .convite h2 {
+        font-size: 1.7em;
+      }
+      
+      .info-links {
+        padding: 20px;
+        flex-direction: column;
+        gap: 20px;
+      }
+      
+      footer {
+        padding: 20px;
+      }
+    }
+    
+    /* Celulares */
+    @media (max-width: 480px) {
+      header nav {
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+      }
+      
+      header nav a {
+        width: 100%;
+        text-align: center;
+        margin: 5px 0;
+      }
+      
+      .hero {
+        height: 350px;
+        padding: 100px 15px 20px;
+      }
+      
+      .hero h1 {
+        font-size: 1.5em;
+      }
+      
+      .hero p {
+        font-size: 1em;
+        margin-bottom: 20px;
+      }
+      
+      .hero .btn {
+        padding: 10px 20px;
+        font-size: 0.9em;
+      }
+      
+      .section {
+        padding: 70px 15px 30px;
+      }
+      
+      .video-section {
+        padding: 60px 15px;
+      }
+      
+      .video-section h2 {
+        font-size: 1.7em;
+      }
+      
+      .video-section p {
+        font-size: 1.1em;
+      }
+      
+      .video-section iframe {
+        height: 200px;
+      }
+      
+      .como-funciona h3 {
+        font-size: 1.5em;
+      }
+      
+      .como-funciona p {
+        font-size: 1em;
+        margin-bottom: 20px;
+      }
+      
+      .professores {
+        gap: 15px;
+      }
+      
+      .professor {
+        width: 140px;
+        height: 200px;
+      }
+      
+      .professor img {
+        height: 100px;
+      }
+      
+      .professor h4 {
+        font-size: 0.9em;
+      }
+      
+      .hero-alt {
+        height: 300px;
+      }
+      
+      .hero-alt h1 {
+        font-size: 1.4em;
+      }
+      
+      .convite {
+        padding: 60px 15px;
+      }
+      
+      .convite h2 {
+        font-size: 1.5em;
+      }
+      
+      .info-links {
+        padding: 15px;
+      }
+      
+      .info-links h4 {
+        font-size: 1.2em;
+      }
+      
+      footer {
+        padding: 15px;
+      }
+      
+      .popup-content {
+        padding: 15px;
+        width: 95%;
+      }
+    }
+    
+    /* Telas muito pequenas */
+    @media (max-width: 360px) {
+      .hero h1 {
+        font-size: 1.3em;
+      }
+      
+      .hero p {
+        font-size: 0.9em;
+      }
+      
+      .professores {
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      .professor {
+        width: 90%;
+        max-width: 200px;
+      }
     }
   </style>
 </head>

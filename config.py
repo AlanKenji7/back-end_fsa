@@ -24,13 +24,8 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
-    # Para Render - criar diretório instance se não existir
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    instance_dir = os.path.join(basedir, 'instance')
-    if not os.path.exists(instance_dir):
-        os.makedirs(instance_dir)
-    # Usar variável de ambiente ou SQLite local
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or f'sqlite:///{os.path.join(instance_dir, "fsa_teste.db")}'
+    # Para PythonAnywhere - usar variável de ambiente
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///fsa_teste.db'
 
 config = {
     'development': DevelopmentConfig,
