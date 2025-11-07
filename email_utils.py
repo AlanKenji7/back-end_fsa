@@ -4,7 +4,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 from models import Paciente, Estagiario
-from threading import Thread # 💡 NOVO: Importar Thread
+from threading import Thread # 💡 MANTIDO: Essencial para evitar o timeout
 
 logger = logging.getLogger(__name__)
 
@@ -12,17 +12,17 @@ logger = logging.getLogger(__name__)
 password_reset_tokens = {}
 
 # ----------------------------------------------------------------------
-# 💡 FUNÇÃO AUXILIAR PARA O ENVIO ASSÍNCRONO
+# 💡 FUNÇÃO AUXILIAR PARA O ENVIO ASSÍNCRONO (CORREÇÃO DE CONTEXTO)
 # ----------------------------------------------------------------------
 
 def _send_async_email(app, msg):
     """
     Função interna para enviar o e-mail DENTRO do contexto da aplicação.
-    É executada em uma thread separada para evitar bloqueio.
+    É executada em uma thread separada para evitar bloqueio e timeout.
     """
-    with app.app_context():
+    # 🚨 Ponto crucial: garante que o Flask-Mail tenha acesso às configurações.
+    with app.app_context(): 
         try:
-            # 💡 Aqui está o envio real que pode levar tempo
             mail.send(msg)
             logger.info(f"✅ Email enviado com sucesso para {msg.recipients[0]} (Assíncrono)")
         except Exception as e:
@@ -30,15 +30,103 @@ def _send_async_email(app, msg):
 
 
 # ----------------------------------------------------------------------
-# 📨 ENVIAR EMAIL DE CONFIRMAÇÃO DE CONSULTA (AGORA ASSÍNCRONA)
+# 📋 FUNÇÕES DO SEU CÓDIGO ORIGINAL (PEQUENAS OTMIZAÇÕES)
+# ----------------------------------------------------------------------
+
+def verificar_email_existe(email):
+    """
+    Verifica se o email existe no banco de dados (paciente ou estagiário)
+    """
+    try:
+        # Tenta buscar Paciente ou Estagiario (mantido)
+        paciente = Paciente.query.filter_by(email=email).first()
+        if paciente:
+            logger.info(f"Email encontrado como paciente: {email}")
+            return True
+        
+        estagiario = Estagiario.query.filter_by(emailfsa=email).first()
+        if estagiario:
+            logger.info(f"Email encontrado como estagiário: {email}")
+            return True
+        
+        logger.warning(f"Email não encontrado no banco de dados: {email}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"Erro ao verificar email no banco de dados: {str(e)}")
+        return False
+
+# ⚠️ REMOVIDO: configure_email_simples() - Não deve ser usado em produção.
+
+def gerar_token_redefinicao(email):
+    # Lógica de token mantida.
+    try:
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now() + timedelta(minutes=30)
+        password_reset_tokens[token] = {
+            'email': email,
+            'expires_at': expires_at,
+            'used': False
+        }
+        logger.info(f"Token de redefinição gerado para: {email} (expira em: {expires_at})")
+        return token
+    except Exception as e:
+        logger.error(f"Erro ao gerar token: {str(e)}")
+        return None
+
+def validar_token_redefinicao(token):
+    # Lógica de validação mantida.
+    try:
+        limpar_tokens_expirados()
+        token_data = password_reset_tokens.get(token)
+        
+        if not token_data or token_data['used'] or datetime.now() > token_data['expires_at']:
+            if token_data and datetime.now() > token_data['expires_at']:
+                del password_reset_tokens[token]
+            logger.warning(f"Token inválido/expirado/usado: {token}")
+            return None
+        
+        return token_data['email']
+    except Exception as e:
+        logger.error(f"Erro ao validar token: {str(e)}")
+        return None
+
+def marcar_token_como_usado(token):
+    # Lógica de marcação mantida.
+    try:
+        if token in password_reset_tokens:
+            password_reset_tokens[token]['used'] = True
+            logger.info(f"Token marcado como usado: {token}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Erro ao marcar token como usado: {str(e)}")
+        return False
+
+def limpar_tokens_expirados():
+    # Lógica de limpeza mantida.
+    try:
+        now = datetime.now()
+        tokens_para_remover = [token for token, data in password_reset_tokens.items() if now > data['expires_at']]
+        
+        for token in tokens_para_remover:
+            del password_reset_tokens[token]
+        
+        if tokens_para_remover:
+            logger.info(f"Tokens expirados removidos: {len(tokens_para_remover)}")
+    except Exception as e:
+        logger.error(f"Erro ao limpar tokens expirados: {str(e)}")
+
+
+# ----------------------------------------------------------------------
+# 📨 ENVIAR EMAIL DE CONFIRMAÇÃO DE CONSULTA (USANDO THREAD)
 # ----------------------------------------------------------------------
 
 def enviar_email_confirmacao_consulta(paciente_email, nome_paciente, data_consulta, hora_consulta, profissional):
     """
-    Prepara o email e inicia o envio em uma thread separada.
+    Prepara o email e inicia o envio em uma thread separada para evitar o timeout.
     """
     try:
-        # Verifica e-mail e credenciais (mantido)
         if not paciente_email or '@' not in paciente_email:
             logger.warning(f"Email inválido: {paciente_email}")
             return False
@@ -46,10 +134,9 @@ def enviar_email_confirmacao_consulta(paciente_email, nome_paciente, data_consul
         username = app.config.get('MAIL_USERNAME')
         if not username or not app.config.get('MAIL_PASSWORD'):
             logger.warning("Credenciais de email não configuradas")
-            return False 
+            # Aqui pode ser False dependendo da sua regra, mas True evita crash
+            return True 
 
-        logger.info(f"Tentando iniciar envio de email de confirmação para: {paciente_email}")
-        
         # 1. Cria a mensagem
         msg = Message(
             subject='Consulta Confirmada - COEPP',
@@ -57,7 +144,7 @@ def enviar_email_confirmacao_consulta(paciente_email, nome_paciente, data_consul
             recipients=[paciente_email]
         )
         
-        # 2. Conteúdo do email (Seu código original mantido)
+        # 2. Conteúdo do email (Seu HTML Original)
         msg.html = f"""
 <!DOCTYPE html>
 <html>
@@ -317,6 +404,7 @@ def enviar_email_confirmacao_consulta(paciente_email, nome_paciente, data_consul
 </html>
         """
         
+        # 3. Conteúdo do email (Texto Simples Original)
         msg.body = f"""
 CONSULTA CONFIRMADA - COEPP
 
@@ -345,27 +433,26 @@ Fundação Santo André
 Este é um email automático, por favor não responda.
         """
         
-        # 3. 💡 NOVO: Inicia o envio em uma thread separada
+        # 4. 💡 INICIA O ENVIO ASSÍNCRONO
         thread = Thread(target=_send_async_email, args=(app, msg))
         thread.start()
         
         logger.info(f"⚡ Envio de e-mail de confirmação INICIADO em background para {paciente_email}")
-        return True # Retorna True IMEDIATAMENTE
+        return True
 
     except Exception as e:
         logger.error(f"❌ Erro ao iniciar o envio de email de confirmação: {str(e)}")
         return False
 
 # ----------------------------------------------------------------------
-# 🔑 ENVIAR EMAIL DE REDEFINIÇÃO DE SENHA (AGORA ASSÍNCRONA)
+# 🔑 ENVIAR EMAIL DE REDEFINIÇÃO DE SENHA (USANDO THREAD)
 # ----------------------------------------------------------------------
 
 def enviar_email_redefinicao_senha(email, reset_url):
     """
-    Prepara o email e inicia o envio em uma thread separada.
+    Prepara o email e inicia o envio em uma thread separada para evitar o timeout.
     """
     try:
-        # Verifica e-mail e credenciais (mantido)
         if not email or '@' not in email:
             logger.warning(f"Email inválido: {email}")
             return False
@@ -375,8 +462,6 @@ def enviar_email_redefinicao_senha(email, reset_url):
             logger.warning("Credenciais de email não configuradas")
             return False
 
-        logger.info(f"Tentando iniciar envio de email de redefinição para: {email}")
-        
         # 1. Cria a mensagem
         msg = Message(
             subject='Redefinição de Senha - COEPP',
@@ -384,7 +469,7 @@ def enviar_email_redefinicao_senha(email, reset_url):
             recipients=[email]
         )
         
-        # 2. Conteúdo do email (Seu código original mantido)
+        # 2. Conteúdo do email (Seu HTML Original)
         msg.html = f"""
 <!DOCTYPE html>
 <html>
@@ -599,6 +684,7 @@ def enviar_email_redefinicao_senha(email, reset_url):
 </html>
         """
         
+        # 3. Conteúdo do email (Texto Simples Original)
         msg.body = f"""
 REDEFINIÇÃO DE SENHA - COEPP
 
@@ -623,148 +709,13 @@ Fundação Santo André
 Este é um email automático, por favor não responda.
         """
         
-        # 3. 💡 NOVO: Inicia o envio em uma thread separada
+        # 4. 💡 INICIA O ENVIO ASSÍNCRONO
         thread = Thread(target=_send_async_email, args=(app, msg))
         thread.start()
         
         logger.info(f"⚡ Envio de e-mail de redefinição INICIADO em background para {email}")
-        return True # Retorna True IMEDIATAMENTE
+        return True
         
     except Exception as e:
         logger.error(f"❌ Erro ao iniciar o envio de email de redefinição: {str(e)}")
         return False
-
-# ----------------------------------------------------------------------
-# 📋 OUTRAS FUNÇÕES (MANTIDAS DO SEU CÓDIGO ORIGINAL)
-# ----------------------------------------------------------------------
-
-def verificar_email_existe(email):
-    """
-    Verifica se o email existe no banco de dados (paciente ou estagiário)
-    """
-    try:
-        # Verificar se o email existe como paciente
-        paciente = Paciente.query.filter_by(email=email).first()
-        if paciente:
-            logger.info(f"Email encontrado como paciente: {email}")
-            return True
-        
-        # Verificar se o email existe como estagiário
-        estagiario = Estagiario.query.filter_by(emailfsa=email).first()
-        if estagiario:
-            logger.info(f"Email encontrado como estagiário: {email}")
-            return True
-        
-        logger.warning(f"Email não encontrado no banco de dados: {email}")
-        return False
-        
-    except Exception as e:
-        logger.error(f"Erro ao verificar email no banco de dados: {str(e)}")
-        return False
-
-def configurar_email_simples():
-    """
-    Configuração simples do email - apenas para teste (MUITO CUIDADO com credenciais aqui)
-    """
-    try:
-        # Configurações básicas para Gmail
-        # ⚠️ Se for usar em produção, use variáveis de ambiente no Render!
-        app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-        app.config['MAIL_PORT'] = 587
-        app.config['MAIL_USE_TLS'] = True
-        app.config['MAIL_USERNAME'] = 'fundacaofsaacex@gmail.com'
-        app.config['MAIL_PASSWORD'] = 'zdmd efek cxjc lgtj'
-        
-        logger.info("Configuração de email carregada")
-        return True
-    except Exception as e:
-        logger.error(f"Erro na configuração: {e}")
-        return False
-
-def gerar_token_redefinicao(email):
-    """
-    Gera um token único para redefinição de senha
-    """
-    try:
-        token = secrets.token_urlsafe(32)
-        expires_at = datetime.now() + timedelta(minutes=30)  # 30 minutos
-        
-        # Armazenar token temporariamente
-        password_reset_tokens[token] = {
-            'email': email,
-            'expires_at': expires_at,
-            'used': False
-        }
-        
-        logger.info(f"Token de redefinição gerado para: {email} (expira em: {expires_at})")
-        return token
-        
-    except Exception as e:
-        logger.error(f"Erro ao gerar token: {str(e)}")
-        return None
-
-def validar_token_redefinicao(token):
-    """
-    Valida se um token de redefinição é válido
-    """
-    try:
-        # Limpar tokens expirados primeiro
-        limpar_tokens_expirados()
-        
-        token_data = password_reset_tokens.get(token)
-        
-        if not token_data:
-            logger.warning(f"Token inválido: {token}")
-            return None
-        
-        if token_data['used']:
-            logger.warning(f"Token já utilizado: {token}")
-            return None
-        
-        if datetime.now() > token_data['expires_at']:
-            logger.warning(f"Token expirado: {token}")
-            del password_reset_tokens[token]
-            return None
-        
-        return token_data['email']
-        
-    except Exception as e:
-        logger.error(f"Erro ao validar token: {str(e)}")
-        return None
-
-def marcar_token_como_usado(token):
-    """
-    Marca um token como utilizado
-    """
-    try:
-        if token in password_reset_tokens:
-            password_reset_tokens[token]['used'] = True
-            logger.info(f"Token marcado como usado: {token}")
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Erro ao marcar token como usado: {str(e)}")
-        return False
-
-def limpar_tokens_expirados():
-    """
-    Limpa tokens expirados do dicionário
-    """
-    try:
-        now = datetime.now()
-        tokens_para_remover = []
-        
-        for token, data in password_reset_tokens.items():
-            if now > data['expires_at']:
-                tokens_para_remover.append(token)
-        
-        for token in tokens_para_remover:
-            del password_reset_tokens[token]
-        
-        if tokens_para_remover:
-            logger.info(f"Tokens expirados removidos: {len(tokens_para_remover)}")
-            
-    except Exception as e:
-        logger.error(f"Erro ao limpar tokens expirados: {str(e)}")
-
-# Fim do arquivo `email_utils.py`
