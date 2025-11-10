@@ -23,10 +23,40 @@ def _send_async_email(app, msg):
     # 🚨 Ponto crucial: garante que o Flask-Mail tenha acesso às configurações.
     with app.app_context(): 
         try:
+            logger.info("=" * 60)
+            logger.info("📧 INICIANDO ENVIO DE EMAIL DE CONFIRMAÇÃO")
+            logger.info(f"📧 Destinatário: {msg.recipients[0]}")
+            logger.info(f"📧 Remetente: {msg.sender}")
+            logger.info(f"📧 Servidor SMTP: {app.config.get('MAIL_SERVER')}:{app.config.get('MAIL_PORT')}")
+            logger.info(f"📧 TLS: {app.config.get('MAIL_USE_TLS')}")
+            logger.info("=" * 60)
+            logger.info("📤 Tentando enviar email via SMTP...")
+            
             mail.send(msg)
             logger.info(f"✅ Email enviado com sucesso para {msg.recipients[0]} (Assíncrono)")
         except Exception as e:
-            logger.error(f"❌ ERRO no envio assíncrono para {msg.recipients[0]}: {str(e)}")
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error("=" * 60)
+            logger.error(f"❌ ERRO CRÍTICO AO ENVIAR EMAIL!")
+            logger.error(f"❌ Tipo do erro: {error_type}")
+            logger.error(f"❌ Mensagem: {error_msg}")
+            logger.error("=" * 60)
+            
+            # Dicas específicas baseadas no tipo de erro
+            if 'Authentication' in error_type or '535' in error_msg:
+                logger.error("💡 DICA: Verifique se a senha de APP do Gmail está correta")
+                logger.error("💡 DICA: Certifique-se de usar senha de APP, não senha normal")
+                logger.error("💡 DICA: Gere uma nova senha de app em: https://myaccount.google.com/apppasswords")
+            elif 'Connection' in error_type or 'timeout' in error_msg.lower():
+                logger.error("💡 DICA: Verifique se a porta 587 não está bloqueada")
+                logger.error("💡 DICA: Verifique conexão com internet")
+            elif 'SSL' in error_type or 'TLS' in error_type:
+                logger.error("💡 DICA: Verifique configurações TLS/SSL")
+            
+            # Log do traceback completo para diagnóstico
+            import traceback
+            logger.error(f"📋 Traceback completo:\n{traceback.format_exc()}")
 
 
 # ----------------------------------------------------------------------
@@ -132,10 +162,14 @@ def enviar_email_confirmacao_consulta(paciente_email, nome_paciente, data_consul
             return False
 
         username = app.config.get('MAIL_USERNAME')
-        if not username or not app.config.get('MAIL_PASSWORD'):
-            logger.warning("Credenciais de email não configuradas")
-            # Aqui pode ser False dependendo da sua regra, mas True evita crash
-            return True 
+        password = app.config.get('MAIL_PASSWORD')
+        
+        if not username or not password:
+            logger.error("❌ CREDENCIAIS DE EMAIL NÃO CONFIGURADAS!")
+            logger.error(f"MAIL_USERNAME: {'Configurado' if username else 'NÃO CONFIGURADO'}")
+            logger.error(f"MAIL_PASSWORD: {'Configurado' if password else 'NÃO CONFIGURADO'}")
+            logger.error("Configure as variáveis de ambiente MAIL_USERNAME e MAIL_PASSWORD no Render")
+            return False 
 
         # 1. Cria a mensagem
         msg = Message(
@@ -458,8 +492,13 @@ def enviar_email_redefinicao_senha(email, reset_url):
             return False
 
         username = app.config.get('MAIL_USERNAME')
-        if not username or not app.config.get('MAIL_PASSWORD'):
-            logger.warning("Credenciais de email não configuradas")
+        password = app.config.get('MAIL_PASSWORD')
+        
+        if not username or not password:
+            logger.error("❌ CREDENCIAIS DE EMAIL NÃO CONFIGURADAS!")
+            logger.error(f"MAIL_USERNAME: {'Configurado' if username else 'NÃO CONFIGURADO'}")
+            logger.error(f"MAIL_PASSWORD: {'Configurado' if password else 'NÃO CONFIGURADO'}")
+            logger.error("Configure as variáveis de ambiente MAIL_USERNAME e MAIL_PASSWORD no Render")
             return False
 
         # 1. Cria a mensagem

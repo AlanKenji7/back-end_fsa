@@ -79,8 +79,9 @@ class ProductionConfig(Config):
     @classmethod
     def init_app(cls, app):
         Config.init_app(app)
-        if not app.config.get('fundacaofsaacex@gmail.com'') or not app.config.get('zdmd efek cxjc lgtj'):
+        if not app.config.get('MAIL_USERNAME') or not app.config.get('MAIL_PASSWORD'):
             app.logger.error("❌ ERRO GRAVE: Credenciais de email não definidas em Produção!")
+            app.logger.error("Configure MAIL_USERNAME e MAIL_PASSWORD nas variáveis de ambiente do Render")
         if not app.config.get('DATABASE_URL'):
              app.logger.error("❌ ERRO GRAVE: DATABASE_URL não definida em Produção!")
              

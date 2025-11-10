@@ -1583,10 +1583,42 @@ def deletar_estagiario(id):
 
 @app.route('/teste-email', methods=['GET'])
 def teste_email():
+    """
+    Rota de teste para verificar configuração de email.
+    Retorna diagnóstico completo da configuração de email.
+    """
     try:
-        # Teste com email real
+        # Verificar configurações
+        mail_username = app.config.get('MAIL_USERNAME')
+        mail_password = app.config.get('MAIL_PASSWORD')
+        mail_server = app.config.get('MAIL_SERVER', 'Não configurado')
+        mail_port = app.config.get('MAIL_PORT', 'Não configurado')
+        mail_use_tls = app.config.get('MAIL_USE_TLS', 'Não configurado')
+        
+        config_status = {
+            'MAIL_SERVER': mail_server,
+            'MAIL_PORT': mail_port,
+            'MAIL_USE_TLS': mail_use_tls,
+            'MAIL_USERNAME': 'Configurado' if mail_username else '❌ NÃO CONFIGURADO',
+            'MAIL_PASSWORD': 'Configurado' if mail_password else '❌ NÃO CONFIGURADO'
+        }
+        
+        # Se não há credenciais, retornar diagnóstico
+        if not mail_username or not mail_password:
+            return jsonify({
+                'status': 'error',
+                'message': '❌ Credenciais de email não configuradas',
+                'configuracao': config_status,
+                'instrucoes': {
+                    'render': 'No painel do Render, vá em Environment Variables e adicione MAIL_USERNAME e MAIL_PASSWORD',
+                    'local': 'Crie um arquivo .env na raiz do projeto com MAIL_USERNAME e MAIL_PASSWORD'
+                }
+            }), 200
+        
+        # Tentar enviar email de teste
+        app.logger.info("🧪 Iniciando teste de envio de email...")
         email_enviado = enviar_email_confirmacao_consulta(
-            paciente_email='fundacaofsaacex@gmail.com',  # Email real para teste
+            paciente_email=mail_username,  # Envia para o próprio email configurado
             nome_paciente='Paciente Teste',
             data_consulta='01/01/2024',
             hora_consulta='14:00',
@@ -1595,19 +1627,27 @@ def teste_email():
         
         if email_enviado:
             return jsonify({
-                'message': '✅ Email enviado com sucesso!',
-                'details': 'Verifique a caixa de entrada do fundacaofsaacex@gmail.com'
+                'status': 'ok',
+                'message': '✅ Email de teste enviado com sucesso!',
+                'configuracao': config_status,
+                'details': f'Verifique a caixa de entrada de {mail_username} (incluindo pasta de SPAM)',
+                'observacao': 'O email foi enviado em background. Verifique os logs do servidor para mais detalhes.'
             }), 200
         else:
             return jsonify({
-                'error': '❌ Falha ao enviar email',
-                'details': 'Verifique os logs do servidor'
-            }), 500
+                'status': 'error',
+                'message': '❌ Falha ao iniciar envio de email',
+                'configuracao': config_status,
+                'details': 'Verifique os logs do servidor para mais informações sobre o erro'
+            }), 200
             
     except Exception as e:
-        app.logger.error(f"Erro no teste: {str(e)}")
+        app.logger.error(f"Erro no teste de email: {str(e)}")
+        import traceback
         return jsonify({
-            'error': f'❌ Erro: {str(e)}'
+            'status': 'error',
+            'error': f'❌ Erro: {str(e)}',
+            'traceback': traceback.format_exc()
         }), 500
 
 # =============================================================================
