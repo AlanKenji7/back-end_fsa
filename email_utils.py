@@ -2,14 +2,96 @@ from flask_mail import Message
 from main import mail, app
 import logging
 import secrets
+import os
+import requests
 from datetime import datetime, timedelta
 from models import Paciente, Estagiario
 from threading import Thread # 💡 MANTIDO: Essencial para evitar o timeout
 
 logger = logging.getLogger(__name__)
 
+# Detectar se está rodando no Render
+def is_render_environment():
+    """Verifica se a aplicação está rodando no Render"""
+    return os.getenv('RENDER') is not None or os.getenv('RENDER_EXTERNAL_URL') is not None
+
 # Dicionário temporário para armazenar tokens (em produção, use banco de dados)
 password_reset_tokens = {}
+
+# ----------------------------------------------------------------------
+# 📧 FUNÇÃO PARA ENVIAR EMAIL VIA SENDGRID API (Funciona no Render)
+# ----------------------------------------------------------------------
+
+def enviar_email_via_sendgrid(destinatario, assunto, html_content, text_content, remetente_email, remetente_nome="COEPP"):
+    """
+    Envia email usando SendGrid API (funciona no Render que bloqueia SMTP)
+    
+    Args:
+        destinatario: Email do destinatário
+        assunto: Assunto do email
+        html_content: Conteúdo HTML do email
+        text_content: Conteúdo texto do email
+        remetente_email: Email do remetente
+        remetente_nome: Nome do remetente
+    """
+    try:
+        sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
+        
+        if not sendgrid_api_key:
+            logger.error("❌ SENDGRID_API_KEY não configurada")
+            return False
+        
+        # URL da API do SendGrid
+        url = "https://api.sendgrid.com/v3/mail/send"
+        
+        # Headers
+        headers = {
+            "Authorization": f"Bearer {sendgrid_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Payload
+        payload = {
+            "personalizations": [
+                {
+                    "to": [{"email": destinatario}],
+                    "subject": assunto
+                }
+            ],
+            "from": {
+                "email": remetente_email,
+                "name": remetente_nome
+            },
+            "content": [
+                {
+                    "type": "text/plain",
+                    "value": text_content
+                },
+                {
+                    "type": "text/html",
+                    "value": html_content
+                }
+            ]
+        }
+        
+        logger.info(f"📧 [SENDGRID] Enviando email para {destinatario} via API...")
+        
+        # Fazer requisição
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        
+        if response.status_code == 202:
+            logger.info(f"✅ [SENDGRID] Email enviado com sucesso para {destinatario}")
+            return True
+        else:
+            logger.error(f"❌ [SENDGRID] Erro ao enviar email: {response.status_code}")
+            logger.error(f"❌ [SENDGRID] Resposta: {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ [SENDGRID] Erro ao enviar email: {str(e)}")
+        import traceback
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        return False
 
 # ----------------------------------------------------------------------
 # 💡 FUNÇÃO AUXILIAR PARA O ENVIO ASSÍNCRONO (CORREÇÃO DE CONTEXTO)
@@ -21,42 +103,80 @@ def _send_async_email(app, msg):
     É executada em uma thread separada para evitar bloqueio e timeout.
     """
     # 🚨 Ponto crucial: garante que o Flask-Mail tenha acesso às configurações.
-    with app.app_context(): 
-        try:
-            logger.info("=" * 60)
-            logger.info("📧 INICIANDO ENVIO DE EMAIL DE CONFIRMAÇÃO")
-            logger.info(f"📧 Destinatário: {msg.recipients[0]}")
-            logger.info(f"📧 Remetente: {msg.sender}")
-            logger.info(f"📧 Servidor SMTP: {app.config.get('MAIL_SERVER')}:{app.config.get('MAIL_PORT')}")
-            logger.info(f"📧 TLS: {app.config.get('MAIL_USE_TLS')}")
-            logger.info("=" * 60)
-            logger.info("📤 Tentando enviar email via SMTP...")
-            
-            mail.send(msg)
-            logger.info(f"✅ Email enviado com sucesso para {msg.recipients[0]} (Assíncrono)")
-        except Exception as e:
-            error_type = type(e).__name__
-            error_msg = str(e)
-            logger.error("=" * 60)
-            logger.error(f"❌ ERRO CRÍTICO AO ENVIAR EMAIL!")
-            logger.error(f"❌ Tipo do erro: {error_type}")
-            logger.error(f"❌ Mensagem: {error_msg}")
-            logger.error("=" * 60)
-            
-            # Dicas específicas baseadas no tipo de erro
-            if 'Authentication' in error_type or '535' in error_msg:
-                logger.error("💡 DICA: Verifique se a senha de APP do Gmail está correta")
-                logger.error("💡 DICA: Certifique-se de usar senha de APP, não senha normal")
-                logger.error("💡 DICA: Gere uma nova senha de app em: https://myaccount.google.com/apppasswords")
-            elif 'Connection' in error_type or 'timeout' in error_msg.lower():
-                logger.error("💡 DICA: Verifique se a porta 587 não está bloqueada")
-                logger.error("💡 DICA: Verifique conexão com internet")
-            elif 'SSL' in error_type or 'TLS' in error_type:
-                logger.error("💡 DICA: Verifique configurações TLS/SSL")
-            
-            # Log do traceback completo para diagnóstico
-            import traceback
-            logger.error(f"📋 Traceback completo:\n{traceback.format_exc()}")
+    try:
+        # Criar um novo contexto da aplicação para a thread
+        with app.app_context():
+            try:
+                # Configurar logging para garantir que funcione na thread
+                import logging
+                thread_logger = logging.getLogger(__name__)
+                thread_logger.setLevel(logging.INFO)
+                
+                thread_logger.info("=" * 60)
+                thread_logger.info("📧 [THREAD] INICIANDO ENVIO DE EMAIL DE CONFIRMAÇÃO")
+                thread_logger.info(f"📧 [THREAD] Destinatário: {msg.recipients[0]}")
+                thread_logger.info(f"📧 [THREAD] Remetente: {msg.sender}")
+                thread_logger.info(f"📧 [THREAD] Servidor SMTP: {app.config.get('MAIL_SERVER')}:{app.config.get('MAIL_PORT')}")
+                thread_logger.info(f"📧 [THREAD] TLS: {app.config.get('MAIL_USE_TLS')}")
+                
+                # Verificar se as credenciais estão disponíveis
+                mail_username = app.config.get('MAIL_USERNAME')
+                mail_password = app.config.get('MAIL_PASSWORD')
+                thread_logger.info(f"📧 [THREAD] MAIL_USERNAME configurado: {bool(mail_username)}")
+                thread_logger.info(f"📧 [THREAD] MAIL_PASSWORD configurado: {bool(mail_password)}")
+                thread_logger.info("=" * 60)
+                
+                if not mail_username or not mail_password:
+                    thread_logger.error("❌ [THREAD] Credenciais de email não disponíveis no contexto da thread!")
+                    return
+                
+                thread_logger.info("📤 [THREAD] Tentando conectar ao servidor SMTP...")
+                
+                # Tentar enviar o email
+                try:
+                    mail.send(msg)
+                    thread_logger.info("=" * 60)
+                    thread_logger.info(f"✅ [THREAD] Email enviado com SUCESSO para {msg.recipients[0]}")
+                    thread_logger.info("=" * 60)
+                except Exception as send_error:
+                    # Erro específico no envio
+                    raise send_error
+                    
+            except Exception as e:
+                # Erro dentro do contexto da aplicação
+                error_type = type(e).__name__
+                error_msg = str(e)
+                
+                thread_logger.error("=" * 60)
+                thread_logger.error(f"❌ [THREAD] ERRO CRÍTICO AO ENVIAR EMAIL!")
+                thread_logger.error(f"❌ [THREAD] Tipo do erro: {error_type}")
+                thread_logger.error(f"❌ [THREAD] Mensagem: {error_msg}")
+                thread_logger.error("=" * 60)
+                
+                # Dicas específicas baseadas no tipo de erro
+                if 'Authentication' in error_type or '535' in error_msg or 'Username and Password not accepted' in error_msg:
+                    thread_logger.error("💡 [THREAD] DICA: Problema de autenticação com Gmail")
+                    thread_logger.error("💡 [THREAD] DICA: Verifique se a senha de APP do Gmail está correta")
+                    thread_logger.error("💡 [THREAD] DICA: Certifique-se de usar senha de APP, não senha normal")
+                    thread_logger.error("💡 [THREAD] DICA: Gere uma nova senha de app em: https://myaccount.google.com/apppasswords")
+                elif 'Connection' in error_type or 'timeout' in error_msg.lower() or 'Connection refused' in error_msg:
+                    thread_logger.error("💡 [THREAD] DICA: Problema de conexão com servidor SMTP")
+                    thread_logger.error("💡 [THREAD] DICA: Verifique se a porta 587 não está bloqueada")
+                    thread_logger.error("💡 [THREAD] DICA: Verifique conexão com internet")
+                elif 'SSL' in error_type or 'TLS' in error_type:
+                    thread_logger.error("💡 [THREAD] DICA: Problema com configurações TLS/SSL")
+                
+                # Log do traceback completo para diagnóstico
+                import traceback
+                thread_logger.error(f"📋 [THREAD] Traceback completo:\n{traceback.format_exc()}")
+                
+    except Exception as outer_error:
+        # Erro ao criar contexto ou outra exceção externa
+        import logging
+        outer_logger = logging.getLogger(__name__)
+        outer_logger.error(f"❌ [THREAD] Erro ao criar contexto da aplicação: {str(outer_error)}")
+        import traceback
+        outer_logger.error(f"📋 [THREAD] Traceback:\n{traceback.format_exc()}")
 
 
 # ----------------------------------------------------------------------
@@ -467,12 +587,85 @@ Fundação Santo André
 Este é um email automático, por favor não responda.
         """
         
-        # 4. 💡 INICIA O ENVIO ASSÍNCRONO
-        thread = Thread(target=_send_async_email, args=(app, msg))
-        thread.start()
+        # 4. 💡 DECIDIR MÉTODO DE ENVIO (SendGrid API ou SMTP)
+        # Render bloqueia SMTP, então usamos SendGrid API quando disponível
+        sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
         
-        logger.info(f"⚡ Envio de e-mail de confirmação INICIADO em background para {paciente_email}")
-        return True
+        # Se tiver SendGrid API Key configurada, usar SendGrid (funciona no Render)
+        if sendgrid_api_key:
+            logger.info("=" * 60)
+            logger.info("📧 Usando SendGrid API para enviar email (funciona no Render)")
+            logger.info("=" * 60)
+            
+            html_content = msg.html
+            text_content = msg.body
+            assunto = msg.subject
+            
+            # Tentar enviar via SendGrid
+            if enviar_email_via_sendgrid(
+                destinatario=paciente_email,
+                assunto=assunto,
+                html_content=html_content,
+                text_content=text_content,
+                remetente_email=username,
+                remetente_nome="COEPP - Fundação Santo André"
+            ):
+                return True
+            else:
+                logger.warning("⚠️ Falha ao enviar via SendGrid")
+                if is_render_environment():
+                    logger.error("❌ Render bloqueia SMTP! Configure SENDGRID_API_KEY no Render.")
+                    logger.error("💡 Veja instruções em: SOLUCAO_RENDER_SENDGRID.md")
+                    return False
+                else:
+                    logger.warning("⚠️ Tentando SMTP como fallback...")
+                    # Continuar para tentar SMTP como fallback (só localmente)
+        elif is_render_environment():
+            # Está no Render mas não tem SendGrid configurado
+            logger.error("=" * 60)
+            logger.error("❌ Render bloqueia conexões SMTP de saída!")
+            logger.error("❌ Configure SENDGRID_API_KEY no Render para usar SendGrid API")
+            logger.error("💡 SendGrid é gratuito até 100 emails/dia")
+            logger.error("💡 Veja instruções em: SOLUCAO_RENDER_SENDGRID.md")
+            logger.error("=" * 60)
+            return False
+        
+        # Tentar SMTP (funciona localmente, mas pode falhar no Render)
+        logger.info("=" * 60)
+        logger.info("📧 Tentando enviar email via SMTP...")
+        logger.info("=" * 60)
+        try:
+            mail.send(msg)
+            logger.info("=" * 60)
+            logger.info(f"✅ Email enviado com SUCESSO para {paciente_email} via SMTP")
+            logger.info("=" * 60)
+            return True
+        except Exception as send_error:
+            error_type = type(send_error).__name__
+            error_msg = str(send_error)
+            logger.error("=" * 60)
+            logger.error(f"❌ ERRO CRÍTICO AO ENVIAR EMAIL VIA SMTP!")
+            logger.error(f"❌ Tipo do erro: {error_type}")
+            logger.error(f"❌ Mensagem: {error_msg}")
+            logger.error("=" * 60)
+            
+            import traceback
+            logger.error(f"📋 Traceback completo:\n{traceback.format_exc()}")
+            
+            # Dicas específicas baseadas no tipo de erro
+            if 'OSError' in error_type or 'Network is unreachable' in error_msg or '101' in error_msg:
+                logger.error("💡 DICA: Render bloqueia conexões SMTP de saída!")
+                logger.error("💡 DICA: Configure SENDGRID_API_KEY no Render para usar SendGrid API")
+                logger.error("💡 DICA: SendGrid é gratuito até 100 emails/dia")
+                logger.error("💡 DICA: Veja instruções em: SOLUCAO_RENDER_SENDGRID.md")
+            elif 'Authentication' in error_type or '535' in error_msg:
+                logger.error("💡 DICA: Problema de autenticação com Gmail")
+                logger.error("💡 DICA: Verifique se a senha de APP do Gmail está correta")
+            elif 'Connection' in error_type or 'timeout' in error_msg.lower():
+                logger.error("💡 DICA: Problema de conexão com servidor SMTP")
+                logger.error("💡 DICA: Render pode ter restrições de rede")
+            
+            return False
 
     except Exception as e:
         logger.error(f"❌ Erro ao iniciar o envio de email de confirmação: {str(e)}")
@@ -748,12 +941,67 @@ Fundação Santo André
 Este é um email automático, por favor não responda.
         """
         
-        # 4. 💡 INICIA O ENVIO ASSÍNCRONO
-        thread = Thread(target=_send_async_email, args=(app, msg))
-        thread.start()
+        # 4. 💡 DECIDIR MÉTODO DE ENVIO (SendGrid API ou SMTP)
+        sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
         
-        logger.info(f"⚡ Envio de e-mail de redefinição INICIADO em background para {email}")
-        return True
+        # Se tiver SendGrid API Key configurada, usar SendGrid (funciona no Render)
+        if sendgrid_api_key:
+            logger.info("=" * 60)
+            logger.info("📧 Usando SendGrid API para enviar email de redefinição")
+            logger.info("=" * 60)
+            
+            html_content = msg.html
+            text_content = msg.body
+            assunto = msg.subject
+            
+            # Tentar enviar via SendGrid
+            if enviar_email_via_sendgrid(
+                destinatario=email,
+                assunto=assunto,
+                html_content=html_content,
+                text_content=text_content,
+                remetente_email=username,
+                remetente_nome="COEPP - Fundação Santo André"
+            ):
+                return True
+            else:
+                logger.warning("⚠️ Falha ao enviar via SendGrid")
+                if is_render_environment():
+                    logger.error("❌ Render bloqueia SMTP! Configure SENDGRID_API_KEY no Render.")
+                    return False
+                else:
+                    logger.warning("⚠️ Tentando SMTP como fallback...")
+        elif is_render_environment():
+            # Está no Render mas não tem SendGrid configurado
+            logger.error("=" * 60)
+            logger.error("❌ Render bloqueia conexões SMTP de saída!")
+            logger.error("❌ Configure SENDGRID_API_KEY no Render para usar SendGrid API")
+            logger.error("=" * 60)
+            return False
+        
+        # Tentar SMTP (funciona localmente)
+        logger.info("=" * 60)
+        logger.info("📧 Tentando enviar email de redefinição via SMTP...")
+        logger.info("=" * 60)
+        try:
+            mail.send(msg)
+            logger.info("=" * 60)
+            logger.info(f"✅ Email de redefinição enviado com SUCESSO para {email} via SMTP")
+            logger.info("=" * 60)
+            return True
+        except Exception as send_error:
+            error_type = type(send_error).__name__
+            error_msg = str(send_error)
+            logger.error("=" * 60)
+            logger.error(f"❌ ERRO ao enviar email de redefinição via SMTP!")
+            logger.error(f"❌ Tipo do erro: {error_type}")
+            logger.error(f"❌ Mensagem: {error_msg}")
+            logger.error("=" * 60)
+            
+            if 'OSError' in error_type or 'Network is unreachable' in error_msg or '101' in error_msg:
+                logger.error("💡 DICA: Render bloqueia conexões SMTP! Configure SENDGRID_API_KEY.")
+            
+            return False
         
     except Exception as e:
         logger.error(f"❌ Erro ao iniciar o envio de email de redefinição: {str(e)}")
