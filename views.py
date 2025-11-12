@@ -34,8 +34,12 @@ except ImportError:
         return True
 
 @app.route('/')
-def index():
- return render_template('landingpage.html')
+def tela_end():
+    return render_template('tela_end.html')
+
+#@app.route('/')
+#def index():
+#return render_template('landingpage.html')
 
 
 
